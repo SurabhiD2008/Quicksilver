@@ -1,5 +1,6 @@
 import './globals.css';
 import { Unbounded, Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 
 // Self-hosted at build time by next/font (no external font requests at runtime).
 const unbounded = Unbounded({ subsets: ['latin'], weight: ['600', '800'], variable: '--font-unbounded', display: 'swap' });
@@ -32,7 +33,10 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${unbounded.variable} ${inter.variable} ${mono.variable} ${fraunces.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
