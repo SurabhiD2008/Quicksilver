@@ -310,6 +310,18 @@ section:nth-child(even) .backtop { margin-left: auto; }
   opacity: 0;
 }
 
+/* The fixed corner labels smoothly recolour when the daylight veil takes over,
+   so they never wash out against the pale epilogue background. */
+#hud, #zone, #credit { transition: color 0.35s ease, text-shadow 0.35s ease; }
+body.is-daylight #hud,
+body.is-daylight #zone,
+body.is-daylight #credit {
+  color: #47605a;              /* readable slate on pale daylight */
+  text-shadow: none;           /* drop the dark blur that muddied them */
+}
+body.is-daylight #hud .val { color: #14323a; }
+body.is-daylight #hud .bar { background: rgba(20, 45, 45, 0.14); }
+
 .epilogue {
   position: relative;
   justify-content: flex-start;

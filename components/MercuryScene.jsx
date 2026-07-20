@@ -412,6 +412,9 @@ void main(){
       const end = top + window.innerHeight * 0.6;
       const t = Math.min(Math.max((window.scrollY - start) / (end - start), 0), 1);
       epilogueVeil.style.opacity = t;
+      // Once the pale daylight veil dominates, flip the fixed corner labels
+      // (HUD, zone, credit) to a dark, crisp treatment so they stay readable.
+      document.body.classList.toggle('is-daylight', t > 0.55);
       const textT = Math.min(Math.max((t - 0.35) / 0.55, 0), 1);
       epilogueFadeEls.forEach((el) => {
         el.style.opacity = textT;
@@ -570,6 +573,7 @@ void main(){
       matcap.dispose();
       glowTex.dispose();
       renderer.dispose();
+      document.body.classList.remove('is-daylight');
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
     };
   }, []);

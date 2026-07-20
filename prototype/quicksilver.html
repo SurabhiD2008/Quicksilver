@@ -348,6 +348,18 @@
     opacity: 0;
   }
 
+  /* The fixed corner labels smoothly recolour when the daylight veil takes over,
+     so they never wash out against the pale epilogue background. */
+  #hud, #zone, #credit { transition: color 0.35s ease, text-shadow 0.35s ease; }
+  body.is-daylight #hud,
+  body.is-daylight #zone,
+  body.is-daylight #credit {
+    color: #47605a;              /* readable slate on pale daylight */
+    text-shadow: none;           /* drop the dark blur that muddied them */
+  }
+  body.is-daylight #hud .val { color: #14323a; }
+  body.is-daylight #hud .bar { background: rgba(20, 45, 45, 0.14); }
+
   /* Centered, editorial layout — an intentional tonal shift from the fiction:
      Fraunces serif, jewel-toned teal→indigo accents on cold daylight. */
   .epilogue {
@@ -1055,6 +1067,10 @@ function updateEpilogue() {
   const t = Math.min(Math.max((scrollY - start) / (end - start), 0), 1);
 
   epilogueVeil.style.opacity = t;
+
+  // Once the pale daylight veil dominates, flip the fixed corner labels
+  // (HUD, zone, credit) to a dark, crisp treatment so they stay readable.
+  document.body.classList.toggle("is-daylight", t > 0.55);
 
   const textT = Math.min(Math.max((t - 0.35) / 0.55, 0), 1);
   epilogueFadeEls.forEach((el) => {
