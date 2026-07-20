@@ -307,6 +307,13 @@
     }
   }
 
+  /* On narrow phones there isn't room for the bottom-left HUD and the
+     bottom-centre credit to share a row — lift the HUD to the top-left so
+     nothing overlaps (the zone label stays top-right, the credit stays bottom). */
+  @media (max-width: 600px) {
+    #hud { top: clamp(1rem, 3vw, 2.4rem); bottom: auto; }
+  }
+
   /* Respect reduced motion for CSS-driven animation too */
   @media (prefers-reduced-motion: reduce) {
     .hint .pulse, #wordmark { animation: none; }

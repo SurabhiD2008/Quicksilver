@@ -66,9 +66,12 @@ it reforms.
   their own, decoupled scroll math so the two never fight.
 - **Passive analytics** — a tiny funnel of how far visitors scroll, stored in
   Postgres. Aggregates are available at `/api/stats` (not surfaced on the page).
-- **Accessible & responsive** — visible keyboard focus states, `prefers-reduced-motion`
-  support (ambient motion damped, interaction preserved), a custom glowing
-  cursor on desktop that falls back to the system cursor on touch/small screens.
+- **Accessible & responsive** — verified from **375 px mobile up to desktop**:
+  no horizontal scroll, and on narrow phones the HUD relocates to the top so the
+  corner labels and the byline never overlap. Visible keyboard focus states,
+  `prefers-reduced-motion` support (ambient motion damped, interaction preserved),
+  and a custom glowing cursor on desktop that falls back to the system cursor on
+  touch/small screens.
 
 ---
 
