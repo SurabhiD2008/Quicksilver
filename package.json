@@ -1,0 +1,19 @@
+{
+  "name": "quicksilver",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Quicksilver — an interactive liquid-metal experience (Next.js port) with a Postgres-backed visitor/scroll analytics API.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0",
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "0.128.0"
+  }
+}
