@@ -15,6 +15,12 @@
 # vercel
 .vercel
 
+# submission / marketing material — kept locally, deliberately not published
+/submission
+/screenshots
+/QUICKSILVER.md
+/LINKEDIN_POST.md
+
 # misc
 .DS_Store
 *.log
