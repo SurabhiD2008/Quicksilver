@@ -3,6 +3,8 @@ import { sql, ensureSchema } from '../../../lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Queries run over HTTP (Neon driver) — keep them out of Next's Data Cache.
+export const fetchCache = 'force-no-store';
 
 // POST /api/scroll  { visitId, zone }
 // Advances the recorded scroll depth for a visit. Uses GREATEST so it only ever

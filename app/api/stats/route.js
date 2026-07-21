@@ -3,6 +3,11 @@ import { sql, ensureSchema } from '../../../lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// @vercel/postgres issues queries over HTTP (Neon driver). This SELECT is
+// byte-identical on every request, so Next's Data Cache would memoise the first
+// response and serve stale counts forever. Opt every fetch in this route out.
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 // GET /api/stats  → aggregate funnel of how far visitors scroll.
 export async function GET() {

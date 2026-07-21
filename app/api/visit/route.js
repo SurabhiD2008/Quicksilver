@@ -4,6 +4,8 @@ import { sql, ensureSchema } from '../../../lib/db';
 // Serverless functions here talk to Postgres, so keep them on the Node.js runtime.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Queries run over HTTP (Neon driver) — keep them out of Next's Data Cache.
+export const fetchCache = 'force-no-store';
 
 // POST /api/visit  → record a new page load, return its id.
 // The client keeps this id in memory for the session and sends it to
