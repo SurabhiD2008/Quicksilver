@@ -4,7 +4,9 @@
 
 **Live:** **[quicksilver-orpin.vercel.app](https://quicksilver-orpin.vercel.app/)** — Next.js on Vercel + Neon Postgres.
 
-**Docs:** [Architecture](docs/architecture.md) · [Analytics](docs/analytics.md)
+**Docs:** [Full project document](QUICKSILVER.md) · [Architecture](docs/architecture.md) · [Analytics](docs/analytics.md)
+
+**Media:** [Screenshots](screenshots/) · [Demo video](submission/quicksilver-demo.mp4) · [Submission kit](submission/DEVPOST_SUBMISSION.md)
 
 **Quicksilver is a decorative, interactive liquid-metal experience.** A chrome
 blob that ripples where you touch it, then — as you scroll — melts, fractures
