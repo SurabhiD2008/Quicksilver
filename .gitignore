@@ -8,11 +8,13 @@
 # production
 /build
 
-# env
+# env — real env files only; .env.example is committed on purpose
 .env
 .env*.local
+
+# vercel
+.vercel
 
 # misc
 .DS_Store
 *.log
-.vercel
