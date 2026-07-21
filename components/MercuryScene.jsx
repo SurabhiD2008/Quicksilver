@@ -413,9 +413,12 @@ void main(){
     );
     function updateEpilogue() {
       if (!epilogueSection || !epilogueVeil) return;
+      // The veil must finish BEFORE the epilogue copy is in reading position,
+      // otherwise the heading is read through a half-transparent blob. It also
+      // must not start until the wordmark reveal has had its moment.
       const top = epilogueSection.offsetTop;
-      const start = top - window.innerHeight * 0.8;
-      const end = top + window.innerHeight * 0.6;
+      const start = top - window.innerHeight * 0.62;
+      const end = top - window.innerHeight * 0.30;
       const t = Math.min(Math.max((window.scrollY - start) / (end - start), 0), 1);
       epilogueVeil.style.opacity = t;
       // Once the pale daylight veil dominates, flip the fixed corner labels

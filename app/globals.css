@@ -334,7 +334,10 @@ body.is-daylight #hud .bar { background: rgba(20, 45, 45, 0.14); }
   justify-content: flex-start;
   align-items: center;      /* centre the flex column */
   text-align: center;       /* centre the copy */
-  padding-top: 18vh;
+  /* Generous top padding is deliberate: it gives the daylight veil room to
+     finish before the first line is in reading position, and reads as a beat
+     of calm between the fiction and the fact. */
+  padding-top: 35vh;
   padding-bottom: 16vh;
   min-height: auto;
   max-width: 880px;
@@ -444,5 +447,5 @@ body.is-daylight #hud .bar { background: rgba(20, 45, 45, 0.14); }
 .epilogue-reset-link:focus-visible { outline: 2px solid #0d9488; outline-offset: 4px; }
 
 @media (max-width: 640px) {
-  .epilogue { padding-top: 12vh; }
+  .epilogue { padding-top: 24vh; }
 }

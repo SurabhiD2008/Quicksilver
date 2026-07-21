@@ -374,7 +374,7 @@
     justify-content: flex-start;
     align-items: center;      /* centre the flex column */
     text-align: center;       /* centre the copy */
-    padding-top: 18vh;
+    padding-top: 35vh;
     padding-bottom: 16vh;
     min-height: auto;
     max-width: 880px;
@@ -485,7 +485,7 @@
   .epilogue-reset-link:focus-visible { outline: 2px solid #0d9488; outline-offset: 4px; }
 
   @media (max-width: 640px) {
-    .epilogue { padding-top: 12vh; }
+    .epilogue { padding-top: 24vh; }
   }
 </style>
 
@@ -1075,8 +1075,8 @@ const epilogueFadeEls = document.querySelectorAll(
 
 function updateEpilogue() {
   const top = epilogueSection.offsetTop;
-  const start = top - innerHeight * 0.8;
-  const end = top + innerHeight * 0.6;
+  const start = top - innerHeight * 0.62;
+  const end = top - innerHeight * 0.30;
   const t = Math.min(Math.max((scrollY - start) / (end - start), 0), 1);
 
   epilogueVeil.style.opacity = t;
