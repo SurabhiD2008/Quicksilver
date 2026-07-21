@@ -376,14 +376,20 @@ void main(){
       uniforms.uRippleStr.value[slot] = strength;
     }
 
+    const setPointerFromEvent = (e) => {
+      pointerPx.x = e.clientX; pointerPx.y = e.clientY;
+      ndc.x = (e.clientX / window.innerWidth) * 2 - 1;
+      ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    };
+
+    // A press/tap always makes a firmer ripple. This runs on every device, so a
+    // touch tap disturbs the surface on mobile too — not just a desktop click.
+    on(window, 'pointerdown', (e) => { setPointerFromEvent(e); tryRipple(1.8); });
+
+    // Continuous hover ripples + parallax only on true pointer devices, so a
+    // touch-drag (which is a scroll) never fights the ripples.
     if (!IS_TOUCH) {
-      on(window, 'pointermove', (e) => {
-        pointerPx.x = e.clientX; pointerPx.y = e.clientY;
-        ndc.x = (e.clientX / window.innerWidth) * 2 - 1;
-        ndc.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        tryRipple(1.0);
-      });
-      on(window, 'pointerdown', () => tryRipple(1.8));
+      on(window, 'pointermove', (e) => { setPointerFromEvent(e); tryRipple(1.0); });
     }
 
     // ── Scroll fraction, anchored to the bottom of Reformation ──────────────

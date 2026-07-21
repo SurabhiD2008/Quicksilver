@@ -2,7 +2,7 @@
 
 > *"Everything flows, nothing stands still."* — Heraclitus
 
-**Live:** _deploying to Vercel — replace this line with your URL after the first deploy._
+**Live:** **[quicksilver-orpin.vercel.app](https://quicksilver-orpin.vercel.app/)** — Next.js on Vercel + Neon Postgres.
 
 **Docs:** [Architecture](docs/architecture.md) · [Analytics](docs/analytics.md)
 
@@ -54,9 +54,10 @@ it reforms.
 
 ## Features
 
-- **Touch-reactive liquid chrome** — ripples propagate from wherever the cursor
-  meets the blob, computed from an analytic ray↔sphere pick so pointer movement
-  never hitches the frame.
+- **Touch-reactive liquid chrome** — ripples propagate from wherever you disturb
+  the metal: continuous ripples as the cursor moves on desktop, and **tap-to-ripple
+  on mobile**. The hit is an analytic ray↔sphere pick, so pointer movement never
+  hitches the frame.
 - **Procedural everything** — the chrome look is a studio *matcap* baked on a
   canvas (bright ceiling, crisp horizon, dark floor, iridescent blooms), sampled
   by the view-space normal; the backlight glow and floating mercury beads are
