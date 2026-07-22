@@ -88,32 +88,6 @@ it reforms.
 
 ---
 
-## Running locally
-
-```bash
-npm install
-cp .env.example .env.local     # paste your Postgres pooled URL into POSTGRES_URL
-npm run dev                    # http://localhost:3000
-```
-
-A database is only needed for the analytics API. The easiest is a free
-[Neon](https://neon.tech) project — copy its **pooled** connection string into
-`POSTGRES_URL`. The `visits` table is created automatically on first request
-(see `lib/db.js`), or run `db/schema.sql` by hand. Without a database the visual
-experience still works; the analytics calls just fail silently.
-
----
-
-## Deploy
-
-1. Push this repo to GitHub and **Import** it in Vercel — it auto-detects
-   Next.js, no configuration needed.
-2. In the project's **Storage** tab, add **Postgres** (Neon). Vercel injects
-   `POSTGRES_URL` (and friends) automatically.
-3. Deploy. The `visits` table is created on the first API hit.
-
----
-
 ## API
 
 | Method | Route | Body → Result |
