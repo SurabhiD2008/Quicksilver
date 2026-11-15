@@ -27,6 +27,11 @@ body {
 #stage {
   position: fixed;
   inset: 0;
+  /* A canvas is a replaced element: without an explicit size it is laid out at
+     its backing-store size, i.e. 2× too large on a Retina display. */
+  display: block;
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
 }

@@ -5,9 +5,15 @@ import * as THREE from 'three';
 
 /**
  * MercuryScene renders the fixed UI (canvas, vignette, epilogue veil, wordmark,
- * HUD, zone label, credit, custom cursor) and runs the liquid-chrome Three.js
- * scene. The scene logic is a faithful port of the single-file build, adapted
- * to run inside a useEffect with full teardown for React Strict Mode.
+ * HUD, zone label, credit, custom cursor) and runs the liquid-metal Three.js
+ * scene inside a useEffect with full teardown for React Strict Mode.
+ *
+ * Rendering: the metal is a true mirror. Every surface reflects a procedural
+ * HDR photo-studio (softboxes, strip lights, a horizon line) by world-space
+ * reflection vector, with Fresnel. The main drop also reflects the droplets and
+ * beads through a live cube capture, and they reflect it back analytically.
+ * The frame is rendered in linear HDR, then bloomed, tone-mapped (ACES) and
+ * finished with a trace of lens fringing and film grain.
  */
 export default function MercuryScene() {
   const holderRef = useRef(null);
@@ -32,86 +38,113 @@ export default function MercuryScene() {
     const IS_TOUCH = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
 
     const renderer = new THREE.WebGLRenderer({
-      canvas, antialias: true, alpha: false, powerPreference: 'high-performance',
+      canvas, antialias: false, alpha: false, powerPreference: 'high-performance',
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+
+    // Linear HDR buffers need float render targets; fall back to 8-bit if not.
+    const GL2 = renderer.capabilities.isWebGL2;
+    const HDR = GL2
+      ? renderer.extensions.has('EXT_color_buffer_float')
+      : renderer.extensions.has('EXT_color_buffer_half_float') && renderer.extensions.has('OES_texture_half_float_linear');
+    const BUF_TYPE = HDR ? THREE.HalfFloatType : THREE.UnsignedByteType;
+
+    // ── Display transform (shared by the final pass and by colour authoring) ─
+    // Everything in the scene is linear HDR; the final pass applies ACES + gamma.
+    // toScene() inverts that, so a colour authored for the screen (a CSS hex)
+    // still lands on exactly that colour after tone-mapping.
+    const invAces = (y) => {
+      y = Math.min(Math.max(y, 0), 0.999);
+      const A = 2.43 * y - 2.51, B = 0.59 * y - 0.03, C = 0.14 * y;
+      return (-B - Math.sqrt(Math.max(B * B - 4 * A * C, 0))) / (2 * A);
+    };
+    const toScene = (v) => invAces(Math.pow(v, 2.2));
+    const sceneColor = (hex) => {
+      const c = new THREE.Color(hex);
+      return c.setRGB(toScene(c.r), toScene(c.g), toScene(c.b));
+    };
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     camera.position.set(0, 0, 5.6);
 
-    const BG_WARM = new THREE.Color('#0d0a0e');
-    const BG_COOL = new THREE.Color('#070a10');
+    const BG_WARM = sceneColor('#0d0a0e');
+    const BG_COOL = sceneColor('#070a10');
     scene.background = BG_WARM.clone();
 
-    // ── Procedural studio-chrome matcap ─────────────────────────────────────
-    function makeMatcap(size = 512) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const g = c.getContext('2d');
-      const R = size / 2;
+    // ── Procedural HDR studio ───────────────────────────────────────────────
+    // What the metal reflects: a dark photo studio lit by softboxes and strip
+    // lights, evaluated analytically per pixel (so it is infinitely sharp) in
+    // linear HDR — the lights are many times brighter than white, which is what
+    // makes the highlights bloom and the chrome read as real metal.
+    const envUniforms = { uEnvRot: { value: 0 }, uEnvTilt: { value: 0 } };
 
-      const studio = g.createLinearGradient(0, 0, 0, size);
-      studio.addColorStop(0.00, '#9fb0ce');
-      studio.addColorStop(0.12, '#5c6884');
-      studio.addColorStop(0.32, '#262d3b');
-      studio.addColorStop(0.44, '#4a556f');
-      studio.addColorStop(0.485, '#9fb1d2');
-      studio.addColorStop(0.50, '#eaf1ff');
-      studio.addColorStop(0.52, '#333b4a');
-      studio.addColorStop(0.58, '#181e2b');
-      studio.addColorStop(0.80, '#0a0d15');
-      studio.addColorStop(1.00, '#030409');
-      g.fillStyle = studio;
-      g.fillRect(0, 0, size, size);
+    const STUDIO_GLSL = `
+uniform float uEnvRot;
+uniform float uEnvTilt;
 
-      const bloom = (x, y, r, color, a) => {
-        const rg = g.createRadialGradient(x, y, 0, x, y, r);
-        rg.addColorStop(0, color.replace('ALPHA', a));
-        rg.addColorStop(1, color.replace('ALPHA', '0'));
-        g.fillStyle = rg;
-        g.fillRect(0, 0, size, size);
-      };
+float softbox(vec3 d, vec3 c, vec2 hs, float soft){
+  float k = dot(d, c);
+  if(k < 0.05) return 0.0;
+  vec3 u = normalize(cross(vec3(0.0, 1.0, 0.0), c));
+  vec3 v = cross(c, u);
+  vec2 q = abs(vec2(dot(d, u), dot(d, v)) / k);
+  vec2 e = 1.0 - smoothstep(hs - soft, hs + soft, q);
+  vec2 n = q / hs;
+  return e.x * e.y * (1.0 - 0.22 * dot(n, n));   // diffuser: hotter in the middle
+}
+float pin(vec3 d, vec3 c, float tight){ return pow(max(dot(d, c), 0.0), tight); }
 
-      g.globalCompositeOperation = 'lighter';
+vec3 studio(vec3 d){
+  float cs = cos(uEnvRot), sn = sin(uEnvRot);
+  d = vec3(cs * d.x + sn * d.z, d.y, cs * d.z - sn * d.x);
+  cs = cos(uEnvTilt); sn = sin(uEnvTilt);
+  d = vec3(d.x, cs * d.y + sn * d.z, cs * d.z - sn * d.y);
+  float y = d.y;
 
-      const streak = g.createLinearGradient(0, R * 0.955, 0, R * 1.02);
-      streak.addColorStop(0, 'rgba(255,255,255,0)');
-      streak.addColorStop(0.5, 'rgba(255,255,255,0.5)');
-      streak.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = streak;
-      g.fillRect(0, 0, size, size);
+  // room: soft grey ceiling falling to a near-black floor
+  vec3 col = mix(vec3(0.020, 0.022, 0.032), vec3(0.105, 0.120, 0.165), smoothstep(-0.05, 1.0, y));
+  col = mix(vec3(0.0045, 0.0045, 0.0075), col, smoothstep(-0.42, 0.03, y));
+  // the crisp horizon seam of the cyclorama, with a little haze around it
+  col += vec3(0.74, 0.84, 1.0) * (exp(-y * y * 5200.0) * 0.85 + exp(-y * y * 70.0) * 0.05);
 
-      bloom(R * 0.58, R * 0.30, R * 0.55, 'rgba(255,150,205,ALPHA)', '0.34');
-      bloom(R * 1.44, R * 0.66, R * 0.62, 'rgba(150,235,255,ALPHA)', '0.34');
-      bloom(R * 0.82, R * 1.44, R * 0.60, 'rgba(190,160,255,ALPHA)', '0.32');
-      bloom(R * 1.26, R * 1.34, R * 0.50, 'rgba(255,225,160,ALPHA)', '0.26');
+  // key softbox (front, high left), cool strip (right), two rim strips behind
+  col += vec3(1.00, 0.97, 0.93) * 8.5 * softbox(d, normalize(vec3(0.0, 0.62, 0.78)), vec2(0.50, 0.34), 0.03);
+  col += vec3(0.80, 0.92, 1.00) * 4.2 * softbox(d, normalize(vec3(0.86, 0.04, 0.50)), vec2(0.09, 0.72), 0.02);
+  col += vec3(0.85, 0.91, 1.00) * 5.0 * softbox(d, normalize(vec3(-0.80, 0.20, -0.56)), vec2(0.20, 0.90), 0.04);
+  col += vec3(1.00, 0.84, 0.92) * 4.0 * softbox(d, normalize(vec3(0.74, 0.36, -0.56)), vec2(0.16, 0.80), 0.04);
+  // overhead bank
+  col += vec3(0.90, 0.95, 1.00) * 2.0 * smoothstep(0.87, 0.97, y);
 
-      bloom(R * 0.66, R * 0.44, R * 0.30, 'rgba(255,255,255,ALPHA)', '0.85');
-      bloom(R * 0.66, R * 0.44, R * 0.10, 'rgba(255,255,255,ALPHA)', '1.0');
-      bloom(R * 1.30, R * 1.22, R * 0.26, 'rgba(215,235,255,ALPHA)', '0.55');
+  // coloured gels — the pink / cyan / violet / gold of the page palette
+  col += vec3(1.00, 0.59, 0.80) * 0.34 * pin(d, normalize(vec3(-0.70, 0.30, -0.25)), 5.0);
+  col += vec3(0.59, 0.92, 1.00) * 0.34 * pin(d, normalize(vec3(0.80, 0.28, 0.15)), 5.0);
+  col += vec3(0.75, 0.63, 1.00) * 0.30 * pin(d, normalize(vec3(-0.25, -0.62, 0.50)), 4.0);
+  col += vec3(1.00, 0.88, 0.63) * 0.24 * pin(d, normalize(vec3(0.45, -0.66, 0.30)), 5.0);
 
-      g.globalCompositeOperation = 'source-over';
+  // bare practicals: tiny, very hot — these are the glints
+  col += vec3(1.00, 0.98, 0.95) * 60.0 * pin(d, normalize(vec3(0.30, 0.52, 0.80)), 9000.0);
+  col += vec3(0.85, 0.93, 1.00) * 45.0 * pin(d, normalize(vec3(-0.62, -0.18, 0.76)), 12000.0);
+  col += vec3(1.00, 0.90, 0.96) * 45.0 * pin(d, normalize(vec3(0.10, 0.80, -0.58)), 12000.0);
+  return col;
+}
 
-      const rim = g.createRadialGradient(R, R, R * 0.58, R, R, R);
-      rim.addColorStop(0, 'rgba(0,0,0,0)');
-      rim.addColorStop(0.80, 'rgba(4,4,8,0.18)');
-      rim.addColorStop(1, 'rgba(0,0,4,0.95)');
-      g.fillStyle = rim;
-      g.fillRect(0, 0, size, size);
+// Schlick Fresnel for liquid mercury (bright, faintly cool reflectance).
+const vec3 F0 = vec3(0.79, 0.81, 0.85);
+vec3 fresnel(float ndv){ return F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0); }
 
-      g.globalCompositeOperation = 'destination-in';
-      g.beginPath();
-      g.arc(R, R, R, 0, Math.PI * 2);
-      g.fillStyle = '#fff';
-      g.fill();
-      g.globalCompositeOperation = 'source-over';
-
-      const tex = new THREE.CanvasTexture(c);      tex.anisotropy = 4;
-      tex.needsUpdate = true;
-      return tex;
-    }
-    const matcap = makeMatcap();
+// One-bounce reflection of the main drop (a sphere of radius rad at the
+// origin) as seen along ray P + t*R. Returns its colour and coverage.
+vec4 dropBounce(vec3 P, vec3 R, float rad){
+  float b = dot(P, R);
+  float h = b * b - (dot(P, P) - rad * rad);
+  if(h <= 0.0 || b >= 0.0) return vec4(0.0);
+  vec3 hn = normalize(P + R * (-b - sqrt(h)));
+  vec3 r2 = reflect(R, hn);
+  float cover = smoothstep(0.0, 0.02 * rad * rad, h);
+  return vec4(studio(r2) * fresnel(max(dot(-R, hn), 0.0)), cover);
+}`;
 
     // ── Shaders ─────────────────────────────────────────────────────────────
     const MAX_RIPPLES = 3;
@@ -140,8 +173,10 @@ float snoise(vec3 v){
   return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
 }
 float fbm(vec3 p){
+  // Three octaves with a steep falloff: liquid under surface tension has broad,
+  // glassy swells, not fine crumple (which reads as foil in a mirror finish).
   float f=0.0, amp=0.5;
-  for(int i=0;i<4;i++){ f+=amp*snoise(p); p*=2.02; amp*=0.5; }
+  for(int i=0;i<3;i++){ f+=amp*snoise(p); p*=2.02; amp*=0.36; }
   return f;
 }`;
 
@@ -154,15 +189,17 @@ uniform float uRippleTime[${MAX_RIPPLES}];
 uniform vec3  uRipplePos[${MAX_RIPPLES}];
 uniform float uRippleStr[${MAX_RIPPLES}];
 
-varying vec3 vViewNormal;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
 varying float vDisp;
-varying vec3 vLocalDir;
 
 float getDisp(vec3 dir){
   float ambScale = mix(1.0, 0.12, uReduced);
-  float amb = fbm(dir * 1.6 + vec3(0.0, uTime * 0.18, uTime * 0.10));
-  float base = amb * (0.05 + uHeat * 0.30) * ambScale;
-  base += fbm(dir * 0.8 - uTime * 0.06) * uHeat * 0.14 * ambScale;
+  // Fine swell stays small; warmth mostly adds broad, slow lobes (one smooth
+  // octave), so the molten drop sags and bulges like liquid rather than crumpling.
+  float amb = fbm(dir * 0.6 + vec3(0.0, uTime * 0.10, uTime * 0.06));
+  float base = amb * (0.06 + uHeat * 0.12) * ambScale;
+  base += snoise(dir * 0.42 + vec3(uTime * 0.05, -uTime * 0.035, uTime * 0.03)) * uHeat * 0.26 * ambScale;
 
   float r = 0.0;
   for(int i=0;i<${MAX_RIPPLES};i++){
@@ -180,7 +217,6 @@ float getDisp(vec3 dir){
 
 void main(){
   vec3 dir = normalize(position);
-  vLocalDir = dir;
 
   float d0 = getDisp(dir);
   vDisp = d0;
@@ -196,43 +232,55 @@ void main(){
   vec3 n = normalize(cross(pT - p0, pB - p0));
   if(dot(n, dir) < 0.0) n = -n;
 
-  vViewNormal = normalize(normalMatrix * n);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p0, 1.0);
+  // normalMatrix keeps the normal right when the drop is pressed into a plaque
+  // (non-uniform scale); the view rotation is then undone to get world space.
+  vec3 vn = normalize(normalMatrix * n);
+  vWorldNormal = normalize((vec4(vn, 0.0) * viewMatrix).xyz);
+  vec4 wp = modelMatrix * vec4(p0, 1.0);
+  vWorldPos = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 
     const FRAGMENT = `
-uniform sampler2D uMatcap;
+${STUDIO_GLSL}
 uniform float uHeat;
 uniform float uTime;
 uniform vec3 uTint;
-varying vec3 vViewNormal;
+uniform float uBlobR;
+#ifdef USE_CUBE
+uniform samplerCube uCube;
+#endif
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
 varying float vDisp;
-varying vec3 vLocalDir;
-
-vec3 aces(vec3 x){
-  const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
-  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
-}
 
 void main(){
-  vec3 n = normalize(vViewNormal);
-  vec2 uv = n.xy * 0.5 + 0.5;
-  vec3 col = texture2D(uMatcap, uv).rgb;
+  vec3 N = normalize(vWorldNormal);
+  vec3 V = normalize(cameraPosition - vWorldPos);
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  vec3 R = reflect(-V, N);
 
-  vec3 col2 = texture2D(uMatcap, (n.xy * 0.42 + 0.5)).rgb;
-  col = mix(col, col2, 0.22);
+  vec3 col = studio(R);
+#ifdef USE_CUBE
+  // live capture of the droplets and beads around the drop (premultiplied)
+  vec4 live = textureCube(uCube, R);
+  col = col * (1.0 - live.a) + live.rgb;
+#else
+  // droplets carry a reflection of the main drop
+  vec4 bounce = dropBounce(vWorldPos, R, uBlobR);
+  col = mix(col, bounce.rgb, bounce.a);
+#endif
+  col *= fresnel(ndv);
 
-  col = mix(col, col * uTint, uHeat * 0.35);
-  col += vDisp * 0.35 * vec3(0.9, 0.95, 1.05);
+  // warmth tints the metal; troughs of the surface catch a little less light
+  col *= mix(vec3(1.0), uTint, uHeat * 0.45);
+  col *= 1.0 + clamp(vDisp, -0.3, 0.12) * 0.8;
 
-  float fres = pow(1.0 - abs(n.z), 2.8);
+  // thin-film sheen at grazing angles
+  float fres = pow(1.0 - ndv, 3.2);
   vec3 irid = 0.55 + 0.45 * cos(6.2831 * (fres * 1.3 + vec3(0.0, 0.33, 0.66)) + uTime * 0.25);
-  col += fres * irid * 0.32;
+  col += fres * irid * 0.07;
 
-  float lum = max(col.r, max(col.g, col.b));
-  col += pow(lum, 6.0) * 0.25;
-
-  col = aces(col * 0.98);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -240,13 +288,16 @@ void main(){
       uTime: { value: 0 },
       uHeat: { value: 0 },
       uReduced: { value: REDUCED ? 1 : 0 },
-      uMatcap: { value: matcap },
+      uEnvRot: envUniforms.uEnvRot,
+      uEnvTilt: envUniforms.uEnvTilt,
+      uBlobR: { value: 0 },
+      uCube: { value: null },
       uTint: { value: new THREE.Color('#ffd9c0') },
       uRippleTime: { value: new Array(MAX_RIPPLES).fill(-100) },
       uRipplePos: { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector3(1, 0, 0)) },
       uRippleStr: { value: new Array(MAX_RIPPLES).fill(0) },
     };
-    const material = new THREE.ShaderMaterial({ vertexShader: VERTEX, fragmentShader: FRAGMENT, uniforms });
+    const material = new THREE.ShaderMaterial({ vertexShader: VERTEX, fragmentShader: FRAGMENT, uniforms, defines: { USE_CUBE: 1 } });
 
     // ── Meshes ──────────────────────────────────────────────────────────────
     const blobGeo = new THREE.IcosahedronGeometry(1, 48);
@@ -256,9 +307,11 @@ void main(){
 
     const dropUniforms = {
       uTime: uniforms.uTime,
-      uHeat: { value: 0.55 },
+      uHeat: { value: 0.2 },
       uReduced: uniforms.uReduced,
-      uMatcap: { value: matcap },
+      uEnvRot: envUniforms.uEnvRot,
+      uEnvTilt: envUniforms.uEnvTilt,
+      uBlobR: { value: 1.5 },
       uTint: { value: new THREE.Color('#cfe4ff') },
       uRippleTime: { value: new Array(MAX_RIPPLES).fill(-100) },
       uRipplePos: { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector3(1, 0, 0)) },
@@ -285,26 +338,42 @@ void main(){
       scene.add(m);
     }
 
-    const beadUniforms = { uMatcap: { value: matcap }, uTime: uniforms.uTime };
+    const beadUniforms = {
+      uEnvRot: envUniforms.uEnvRot,
+      uEnvTilt: envUniforms.uEnvTilt,
+      uBlobR: dropUniforms.uBlobR,
+      uHaze: { value: BG_WARM.clone() },
+    };
     const beadMaterial = new THREE.ShaderMaterial({
       uniforms: beadUniforms,
       vertexShader: `
         varying vec3 vN;
+        varying vec3 vP;
         void main(){
-          vN = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vP = wp.xyz;
+          vN = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
       fragmentShader: `
-        uniform sampler2D uMatcap;
+        ${STUDIO_GLSL}
+        uniform float uBlobR;
+        uniform vec3 uHaze;
         varying vec3 vN;
-        vec3 aces(vec3 x){const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
-          return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);}
+        varying vec3 vP;
         void main(){
-          vec3 n = normalize(vN);
-          vec3 col = texture2D(uMatcap, n.xy*0.5+0.5).rgb;
-          float rim = pow(1.0 - abs(n.z), 2.5);
-          col += rim * 0.35 * vec3(0.7,0.85,1.0);
-          gl_FragColor = vec4(aces(col*1.15), 1.0);
+          vec3 N = normalize(vN);
+          vec3 toCam = cameraPosition - vP;
+          vec3 V = normalize(toCam);
+          float ndv = clamp(dot(N, V), 0.0, 1.0);
+          vec3 R = reflect(-V, N);
+          vec3 col = studio(R);
+          vec4 bounce = dropBounce(vP, R, uBlobR);
+          col = mix(col, bounce.rgb, bounce.a);
+          col *= fresnel(ndv);
+          // distant beads sink into the air of the room
+          float haze = smoothstep(2.0, 9.0, -vP.z) * 0.72;
+          gl_FragColor = vec4(mix(col, uHaze, haze), 1.0);
         }`,
     });
 
@@ -327,28 +396,192 @@ void main(){
       scene.add(m);
     }
 
-    function makeGlow(size = 256) {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = size;
-      const gg = cv.getContext('2d');
-      const rg = gg.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-      rg.addColorStop(0.0, 'rgba(210,228,255,0.9)');
-      rg.addColorStop(0.25, 'rgba(150,180,235,0.45)');
-      rg.addColorStop(0.6, 'rgba(90,110,170,0.12)');
-      rg.addColorStop(1.0, 'rgba(0,0,0,0)');
-      gg.fillStyle = rg;
-      gg.fillRect(0, 0, size, size);
-      const tex = new THREE.CanvasTexture(cv);      return tex;
-    }
-    const glowTex = makeGlow();
+    // Soft backlight halo behind the drop. Authored as a display-space falloff
+    // and inverted through the tone curve so it keeps its intended softness.
+    const glowUniforms = { uColor: { value: new THREE.Color(1, 1, 1) } };
     const glow = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }),
+      new THREE.ShaderMaterial({
+        uniforms: glowUniforms,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+        vertexShader: `
+          varying vec2 vUv;
+          void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `
+          uniform vec3 uColor;
+          varying vec2 vUv;
+          vec3 invAces(vec3 y){
+            y = clamp(y, 0.0, 0.999);
+            vec3 A = 2.43 * y - 2.51, B = 0.59 * y - 0.03, C = 0.14 * y;
+            return (-B - sqrt(max(B * B - 4.0 * A * C, 0.0))) / (2.0 * A);
+          }
+          void main(){
+            float r = clamp(length(vUv - 0.5) * 2.0, 0.0, 1.0);
+            float f = 1.0 - r;
+            vec3 disp = vec3(0.50, 0.60, 0.86) * (0.42 * pow(f, 3.2) + 0.13 * f * f) * uColor;
+            gl_FragColor = vec4(invAces(pow(disp, vec3(2.2))), 1.0);
+          }`,
+      }),
     );
     glow.position.set(0, 0.3, -3.2);
     glow.scale.setScalar(11);
     glow.renderOrder = -1;
     scene.add(glow);
+
+    // ── Live reflections: cube capture from the centre of the drop ──────────
+    // Only the droplets and beads are captured (on transparent black), so the
+    // studio itself stays analytically sharp and this map can stay small.
+    const CUBE_SIZE = IS_TOUCH ? 128 : 256;
+    const CUBE_EVERY = IS_TOUCH ? 2 : 1;
+    const cubeRT = new THREE.WebGLCubeRenderTarget(CUBE_SIZE, {
+      format: THREE.RGBAFormat, type: BUF_TYPE,
+      generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+    });
+    const cubeCam = new THREE.CubeCamera(0.05, 40, cubeRT);
+    scene.add(cubeCam);
+    uniforms.uCube.value = cubeRT.texture;
+
+    // ── HDR post chain: scene → bloom pyramid → tone-map + lens finish ──────
+    const rtOpts = { format: THREE.RGBAFormat, type: BUF_TYPE, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false };
+    let sceneRT;
+    if (GL2 && HDR) {
+      sceneRT = new THREE.WebGLMultisampleRenderTarget(4, 4, { ...rtOpts, depthBuffer: true });
+      sceneRT.samples = (IS_TOUCH || renderer.getPixelRatio() >= 2) ? 2 : 4;
+    } else {
+      sceneRT = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: true });
+    }
+
+    const BLOOM_LEVELS = IS_TOUCH ? 4 : 5;
+    const bloomDown = [];
+    const bloomUp = [];
+    for (let i = 0; i < BLOOM_LEVELS; i++) {
+      bloomDown.push(new THREE.WebGLRenderTarget(4, 4, rtOpts));
+      if (i < BLOOM_LEVELS - 1) bloomUp.push(new THREE.WebGLRenderTarget(4, 4, rtOpts));
+    }
+
+    const FS_VERT = `
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+    const fsMat = (fragmentShader, u) => new THREE.ShaderMaterial({
+      vertexShader: FS_VERT, fragmentShader, uniforms: u, depthTest: false, depthWrite: false,
+    });
+
+    // Bright-pass + first downsample: soft-knee threshold, fireflies clamped.
+    const prefilterMat = fsMat(`
+      uniform sampler2D tSrc; uniform vec2 uTexel;
+      varying vec2 vUv;
+      void main(){
+        vec4 o = uTexel.xyxy * vec4(-1.0, -1.0, 1.0, 1.0);
+        vec3 c = 0.25 * (min(texture2D(tSrc, vUv + o.xy).rgb, 16.0) + min(texture2D(tSrc, vUv + o.zy).rgb, 16.0)
+                       + min(texture2D(tSrc, vUv + o.xw).rgb, 16.0) + min(texture2D(tSrc, vUv + o.zw).rgb, 16.0));
+        float br = max(c.r, max(c.g, c.b));
+        float soft = clamp(br - 0.55, 0.0, 0.9);
+        soft = soft * soft / 1.8;
+        float w = max(soft, br - 1.0) / max(br, 1e-4);
+        gl_FragColor = vec4(c * w, 1.0);
+      }`, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
+
+    const downMat = fsMat(`
+      uniform sampler2D tSrc; uniform vec2 uTexel;
+      varying vec2 vUv;
+      void main(){
+        vec4 o = uTexel.xyxy * vec4(-1.0, -1.0, 1.0, 1.0);
+        vec3 c = texture2D(tSrc, vUv).rgb * 4.0
+               + texture2D(tSrc, vUv + o.xy).rgb + texture2D(tSrc, vUv + o.zy).rgb
+               + texture2D(tSrc, vUv + o.xw).rgb + texture2D(tSrc, vUv + o.zw).rgb;
+        gl_FragColor = vec4(c / 8.0, 1.0);
+      }`, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
+
+    // Tent upsample of the wider level, added to the sharper one.
+    const upMat = fsMat(`
+      uniform sampler2D tSrc; uniform sampler2D tBase; uniform vec2 uTexel;
+      varying vec2 vUv;
+      void main(){
+        vec4 o = uTexel.xyxy * vec4(1.0, 1.0, -1.0, 0.0);
+        vec3 c = texture2D(tSrc, vUv).rgb * 4.0
+               + (texture2D(tSrc, vUv - o.xw).rgb + texture2D(tSrc, vUv + o.xw).rgb
+                + texture2D(tSrc, vUv - o.wy).rgb + texture2D(tSrc, vUv + o.wy).rgb) * 2.0
+               + texture2D(tSrc, vUv + o.xy).rgb + texture2D(tSrc, vUv - o.xy).rgb
+               + texture2D(tSrc, vUv + o.zy).rgb + texture2D(tSrc, vUv - o.zy).rgb;
+        gl_FragColor = vec4(texture2D(tBase, vUv).rgb + c / 16.0, 1.0);
+      }`, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() } });
+
+    // Final: slight lens fringing toward the corners, bloom, ACES, gamma, grain.
+    const finalMat = fsMat(`
+      uniform sampler2D tScene; uniform sampler2D tBloom;
+      uniform float uBloom; uniform float uTime; uniform vec2 uRes;
+      varying vec2 vUv;
+      vec3 aces(vec3 x){
+        const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+        return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
+      }
+      float hash(vec2 p){
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+      void main(){
+        vec2 c = vUv - 0.5;
+        vec2 off = c * dot(c, c) * 0.006;
+        vec3 col = vec3(texture2D(tScene, vUv + off).r, texture2D(tScene, vUv).g, texture2D(tScene, vUv - off).b);
+        col += texture2D(tBloom, vUv).rgb * uBloom;
+        col = pow(aces(col), vec3(1.0 / 2.2));
+        // fine animated grain; also dithers the dark gradients against banding
+        vec2 px = floor(vUv * uRes);
+        float g = hash(px + fract(uTime) * 61.7) + hash(px + 17.0 + fract(uTime * 1.31) * 47.3) - 1.0;
+        col += g * 0.012;
+        gl_FragColor = vec4(col, 1.0);
+      }`, {
+      tScene: { value: null }, tBloom: { value: null },
+      uBloom: { value: 0.10 }, uTime: uniforms.uTime, uRes: { value: new THREE.Vector2(1, 1) },
+    });
+
+    const fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const fsGeo = new THREE.PlaneGeometry(2, 2);
+    const fsMesh = new THREE.Mesh(fsGeo, prefilterMat);
+    fsMesh.frustumCulled = false;
+    const fsScene = new THREE.Scene();
+    fsScene.add(fsMesh);
+    const blit = (mat, target) => {
+      fsMesh.material = mat;
+      renderer.setRenderTarget(target);
+      renderer.render(fsScene, fsCam);
+    };
+
+    function renderFrame(captureCube) {
+      if (captureCube) {
+        const bg = scene.background;
+        scene.background = null;
+        blob.visible = false; glow.visible = false;
+        cubeCam.update(renderer, scene);
+        blob.visible = true; glow.visible = true;
+        scene.background = bg;
+      }
+
+      renderer.setRenderTarget(sceneRT);
+      renderer.render(scene, camera);
+
+      prefilterMat.uniforms.tSrc.value = sceneRT.texture;
+      prefilterMat.uniforms.uTexel.value.set(0.5 / bloomDown[0].width, 0.5 / bloomDown[0].height);
+      blit(prefilterMat, bloomDown[0]);
+      for (let i = 1; i < BLOOM_LEVELS; i++) {
+        downMat.uniforms.tSrc.value = bloomDown[i - 1].texture;
+        downMat.uniforms.uTexel.value.set(1 / bloomDown[i - 1].width, 1 / bloomDown[i - 1].height);
+        blit(downMat, bloomDown[i]);
+      }
+      let wide = bloomDown[BLOOM_LEVELS - 1];
+      for (let i = BLOOM_LEVELS - 2; i >= 0; i--) {
+        upMat.uniforms.tSrc.value = wide.texture;
+        upMat.uniforms.tBase.value = bloomDown[i].texture;
+        upMat.uniforms.uTexel.value.set(1 / wide.width, 1 / wide.height);
+        blit(upMat, bloomUp[i]);
+        wide = bloomUp[i];
+      }
+
+      finalMat.uniforms.tScene.value = sceneRT.texture;
+      finalMat.uniforms.tBloom.value = wide.texture;
+      blit(finalMat, null);
+    }
 
     // ── Interaction — pointer, ripples ──────────────────────────────────────
     const ndc = new THREE.Vector2(0, 0);
@@ -440,7 +673,18 @@ void main(){
       const pr = renderer.getPixelRatio();
       if (w > 0 && h > 0 && (canvas.width !== Math.floor(w * pr) || canvas.height !== Math.floor(h * pr))) {
         renderer.setSize(w, h, false);
+        const bw = Math.floor(w * pr), bh = Math.floor(h * pr);
+        sceneRT.setSize(bw, bh);
+        for (let i = 0; i < BLOOM_LEVELS; i++) {
+          const lw = Math.max(2, bw >> (i + 1)), lh = Math.max(2, bh >> (i + 1));
+          bloomDown[i].setSize(lw, lh);
+          if (bloomUp[i]) bloomUp[i].setSize(lw, lh);
+        }
+        finalMat.uniforms.uRes.value.set(bw, bh);
         camera.aspect = w / h;
+        // On tall, narrow screens pull the camera back so the whole drop fits
+        // the width instead of being cropped by the sides.
+        camera.position.z = 5.6 * Math.max(1, 0.82 / camera.aspect);
         camera.updateProjectionMatrix();
       }
     }
@@ -478,6 +722,7 @@ void main(){
     const clock = new THREE.Clock();
     const camTarget = new THREE.Vector2(0, 0);
     let rafId = 0;
+    let frameNo = 0;
 
     function frame() {
       syncSize();
@@ -532,7 +777,19 @@ void main(){
       const bgT = smoothstep(0.35, 0.75, f);
       scene.background.copy(BG_WARM).lerp(BG_COOL, bgT);
       uniforms.uTint.value.setRGB(lerp(1.0, 0.82, bgT), lerp(0.85, 0.9, bgT), lerp(0.75, 1.0, bgT));
-      glow.material.color.setRGB(lerp(1.0, 0.82, bgT), lerp(0.92, 0.94, bgT), lerp(0.9, 1.1, bgT));
+      glowUniforms.uColor.value.setRGB(lerp(1.0, 0.82, bgT), lerp(0.92, 0.94, bgT), lerp(0.9, 1.1, bgT));
+      beadUniforms.uHaze.value.copy(scene.background);
+
+      // The studio swings around the metal as the story advances, so the lights
+      // sweep across it — and the key light always sits on the side away from
+      // the copy (sections alternate left / right). Droplets and beads see the
+      // drop at its true size.
+      envUniforms.uEnvRot.value = -0.75 * Math.cos(f * Math.PI * 3) + (REDUCED ? 0 : Math.sin(t * 0.07) * 0.14);
+      // As the drop presses flat it faces the lens squarely; tip the studio so
+      // the horizon seam clears the wordmark and the name sits on dark mirror,
+      // with the lights riding the plaque's rim.
+      envUniforms.uEnvTilt.value = plaque * -0.14;
+      dropUniforms.uBlobR.value = blob.scale.x * (1 - 0.55 * plaque);
 
       const px = (pointerPx.x / window.innerWidth) * 2 - 1;
       const py = (pointerPx.y / window.innerHeight) * 2 - 1;
@@ -561,7 +818,7 @@ void main(){
         cursor.style.transform = `translate3d(${cur.x}px, ${cur.y}px, 0)`;
       }
 
-      renderer.render(scene, camera);
+      renderFrame(frameNo++ % CUBE_EVERY === 0);
       rafId = requestAnimationFrame(frame);
     }
     rafId = requestAnimationFrame(frame);
@@ -579,8 +836,12 @@ void main(){
       material.dispose();
       dropMaterial.dispose();
       beadMaterial.dispose();
-      matcap.dispose();
-      glowTex.dispose();
+      cubeRT.dispose();
+      sceneRT.dispose();
+      bloomDown.forEach((rt) => rt.dispose());
+      bloomUp.forEach((rt) => rt.dispose());
+      [prefilterMat, downMat, upMat, finalMat].forEach((m) => m.dispose());
+      fsGeo.dispose();
       renderer.dispose();
       document.body.classList.remove('is-daylight');
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
