@@ -5,7 +5,7 @@ import * as THREE from 'three';
 
 /**
  * MercuryScene renders the fixed UI (canvas, vignette, epilogue veil, wordmark,
- * HUD, zone label, credit, custom cursor) and runs the liquid-metal Three.js
+ * frosted header/footer bars, HUD, zone label, credit, custom cursor) and runs the liquid-metal Three.js
  * scene inside a useEffect with full teardown for React Strict Mode.
  *
  * Rendering: the metal is a true mirror. Every surface reflects a procedural
@@ -858,6 +858,11 @@ void main(){
 
       {/* Fixed wordmark, revealed on scroll */}
       <div id="wordmark-wrap"><div id="wordmark">QUICKSILVER</div></div>
+
+      {/* Frosted bars behind the fixed labels, so scrolling copy passes under
+          them instead of colliding with the HUD, zone label and credit. */}
+      <div id="bar-top" className="chrome-bar" aria-hidden="true" />
+      <div id="bar-bottom" className="chrome-bar" aria-hidden="true" />
 
       {/* HUD */}
       <div id="hud" aria-hidden="true">

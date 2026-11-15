@@ -17,11 +17,13 @@ It is one project in two parts:
 
 - **Frontend** (`app/`, `components/`) — a **Next.js 14 (App Router)** app in
   **React 18**. The centrepiece is a custom **Three.js** scene: a subdivided
-  icosahedron shaded with a hand-baked chrome *matcap* and a GLSL vertex shader
-  that displaces the surface with fbm noise plus decaying touch-ripples. The
+  icosahedron whose GLSL vertex shader displaces the surface with fbm noise plus
+  decaying touch-ripples, shaded as a true mirror — it reflects a procedural HDR
+  photo studio, and the drop and its droplets reflect each other. The frame is
+  rendered in linear HDR and finished with bloom and filmic tone-mapping. The
   whole narrative is driven by a single scroll fraction. Fonts are self-hosted
-  via `next/font`; every texture is generated procedurally on a `<canvas>` —
-  no external image assets.
+  via `next/font`; the lighting and every texture are generated in code — no
+  external image assets.
 - **Backend** (`app/api/`, `lib/`) — a small, privacy-light **visitor & scroll
   analytics** API on **PostgreSQL (Neon / Vercel Postgres)**, deployed as
   **Vercel serverless functions**. It records each visit and how far the reader
@@ -58,18 +60,32 @@ it reforms.
   the metal: continuous ripples as the cursor moves on desktop, and **tap-to-ripple
   on mobile**. The hit is an analytic ray↔sphere pick, so pointer movement never
   hitches the frame.
-- **Procedural everything** — the chrome look is a studio *matcap* baked on a
-  canvas (bright ceiling, crisp horizon, dark floor, iridescent blooms), sampled
-  by the view-space normal; the backlight glow and floating mercury beads are
-  generated in code. No image files ship with the app.
+- **Mirror-finish mercury** — the metal reflects a procedural HDR photo studio
+  (softboxes, strip lights, a crisp horizon seam, gels in the page palette) by
+  world-space reflection vector with Fresnel, so highlights slide across the
+  surface as it moves. The main drop picks up the droplets and beads around it
+  through a live cube capture, and they reflect it back.
+- **Cinematic finish** — the scene is rendered in linear HDR with multisampling,
+  then given a soft-knee bloom, ACES tone-mapping, a trace of lens fringing and
+  fine film grain. The studio swings with the scroll so the key light always
+  sits on the side away from the copy.
+- **Procedural everything** — the studio lighting, the backlight glow and the
+  floating mercury beads are all generated in code. No image files ship with
+  the app.
 - **Honest, scroll-linked storytelling** — the blob's arc finishes exactly at
   the end of Reformation; the epilogue's daylight "veil" and text reveal run on
   their own, decoupled scroll math so the two never fight.
 - **Passive analytics** — a tiny funnel of how far visitors scroll, stored in
   Postgres. Aggregates are available at `/api/stats` (not surfaced on the page).
+- **Frosted header & footer bars** — the fixed labels (surface-tension HUD, zone
+  name, byline) sit inside translucent, blurred bars pinned to the top and
+  bottom edges, so scrolling copy slides underneath instead of colliding with
+  them. The bars turn from dark to pale glass as the epilogue's daylight arrives.
 - **Accessible & responsive** — verified from **375 px mobile up to desktop**:
-  no horizontal scroll, and on narrow phones the HUD relocates to the top so the
-  corner labels and the byline never overlap. Visible keyboard focus states,
+  no horizontal scroll; the canvas is sized to the viewport on HiDPI screens, on
+  tall narrow screens the camera pulls back so the whole drop fits the width,
+  and on narrow phones the HUD moves into the header bar so the labels and the
+  byline never overlap. Visible keyboard focus states,
   `prefers-reduced-motion` support (ambient motion damped, interaction preserved),
   and a custom glowing cursor on desktop that falls back to the system cursor on
   touch/small screens.
@@ -81,7 +97,7 @@ it reforms.
 | Layer | Choice |
 |---|---|
 | Framework | Next.js 14 (App Router), React 18 |
-| 3D | Three.js `0.128.0` (pinned to match the original build exactly) |
+| 3D | Three.js `0.128.0` (pinned) |
 | Styling | Plain CSS (`app/globals.css`), fonts via `next/font` |
 | Database | PostgreSQL — Neon / Vercel Postgres, via `@vercel/postgres` |
 | Hosting | Vercel (static page on the CDN, API as serverless functions) |

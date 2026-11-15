@@ -13,7 +13,7 @@ database, and the decisions that tie them.
         ┌───────────────────────────────┐
         │  Next.js page (App Router)     │   ← prerendered HTML on Vercel's CDN
         │  • 5 scroll sections (RSC)      │
-        │  • MercuryScene  ('use client') │   ← Three.js: matcap + GLSL shaders
+        │  • MercuryScene  ('use client') │   ← Three.js: HDR reflections + post
         │  • Analytics     ('use client') │   ← fire-and-forget beacons
         └───────────────┬───────────────┘
                         │ fetch /api/*  (same origin)
@@ -52,7 +52,7 @@ the verbatim epilogue copy are plain markup, rendered to static HTML at build
 time. Only two pieces opt into the client:
 
 - **`MercuryScene`** (`'use client'`) owns everything visual and interactive —
-  the WebGL canvas, the fixed HUD/wordmark/credit/cursor, and the entire
+  the WebGL canvas, the fixed header/footer bars, HUD/wordmark/credit/cursor, and the entire
   Three.js render loop. It reads the shared scroll state and writes to DOM nodes
   (HUD %, zone label, wordmark opacity, the epilogue veil) each frame.
 - **`Analytics`** (`'use client'`) is a pure side-effect recorder — it renders
@@ -66,14 +66,49 @@ loads for the interactive layer.
 
 The blob is an `IcosahedronGeometry(1, 48)` shaded with a custom `ShaderMaterial`:
 
-- **Vertex shader** — displaces each vertex along its normal using 4-octave fbm
-  noise (ambient wobble) plus up to three decaying sine-wave ripples sourced
-  from pointer touches. It recomputes the normal from two tangential neighbours
-  so the chrome reflection actually bends with the surface.
-- **Fragment shader** — a classic **matcap** lookup: the view-space normal
-  indexes a procedurally-baked chrome "studio" texture (bright ceiling → crisp
-  horizon → dark floor, with iridescent colour blooms). Filmic ACES tone-mapping,
-  an iridescent Fresnel rim, and a cheap specular bloom finish the metal.
+- **Vertex shader** — displaces each vertex along its normal using low-frequency
+  fbm noise (three octaves with a steep falloff, so the surface has broad glassy
+  swells rather than fine crumple), one extra smooth octave that grows with heat,
+  plus up to three decaying sine-wave ripples sourced from pointer touches. It
+  recomputes the normal from two tangential neighbours so reflections actually
+  bend with the surface, and passes world-space position and normal on.
+- **Fragment shader** — a true mirror. The view vector is reflected about the
+  world-space normal and looked up in a **procedural HDR studio**: a GLSL
+  function that returns radiance for any direction (grey ceiling → crisp horizon
+  seam → dark floor, a key softbox, strip and rim lights, coloured gels and a
+  few tiny, very hot practicals for glints). Because it is evaluated
+  analytically per pixel it is infinitely sharp, and because the lights are many
+  times brighter than white the highlights bloom. Schlick Fresnel, a warm tint
+  that follows heat, and a faint thin-film sheen at grazing angles finish it.
+
+**Inter-reflections.** A `CubeCamera` at the centre of the drop captures only the
+droplets and beads, on transparent black, into a small mip-mapped cube target
+each frame; the drop composites that over the analytic studio. Going the other
+way, droplets and beads intersect their reflection ray with the drop's bounding
+sphere analytically and shade that hit with the same studio function — one
+bounce, no extra render.
+
+**HDR post chain.** Nothing is tone-mapped in the materials. The scene renders
+into a multisampled half-float target, then:
+
+1. a soft-knee bright pass and a 4–5 level downsample / tent-upsample pyramid
+   produce the bloom;
+2. the final pass adds the bloom, applies a trace of radial colour fringing,
+   ACES tone-mapping and gamma, and a fine animated grain that also dithers the
+   dark gradients against banding.
+
+Colours authored for the screen (the CSS-hex backgrounds, the backlight halo) are
+pushed through the inverse of that tone curve first, so they land on exactly the
+intended colour. Where float render targets are unavailable the chain falls back
+to 8-bit buffers.
+
+**Staging.** The studio is rotated by a uniform as the story advances, so the
+key light swings to the side away from the copy (sections alternate left and
+right), and it tilts as the drop flattens so the wordmark sits on dark mirror.
+On tall, narrow viewports the camera pulls back so the whole drop fits the width.
+The canvas is given an explicit CSS size — a `<canvas>` is a replaced element and
+would otherwise be laid out at its backing-store size, i.e. 2× too large on a
+HiDPI display.
 
 A single **scroll fraction** — anchored to the *bottom of Reformation*, not the
 whole document, so the epilogue below doesn't stretch the timeline — drives the
@@ -87,6 +122,18 @@ the ~46k-triangle mesh on every pointer move (which stutters the frame), the
 scene does an **analytic ray↔sphere** intersection against the blob's bounding
 sphere — O(1), smooth. Cursor and camera-parallax smoothing are frame-rate
 independent (exponential), so motion stays smooth on any refresh rate.
+
+### Header and footer bars
+
+The HUD, zone label and byline are `position: fixed`, so long copy (the
+epilogue especially) used to scroll straight through them. Two fixed, frosted
+bars (`.chrome-bar` — a translucent fill plus `backdrop-filter: blur`) now sit at
+the top and bottom edges, on the same layer as the labels and ahead of them in
+the DOM so the labels paint on top. The labels are vertically centred inside the
+bars via a shared `--bar-h` custom property, with safe-area insets added for
+notched phones. `body.is-daylight` — the class the scene already toggles when the
+epilogue veil takes over — switches the bars from dark to pale glass. Browsers
+without `backdrop-filter` get a near-opaque fill instead.
 
 ---
 
@@ -105,6 +152,8 @@ See **[Analytics](analytics.md)** for the data model and request/response shapes
 ## Provenance
 
 Quicksilver began life as a single self-contained HTML file (kept in
-`prototype/`). This app is a faithful port of that build — same matcap, same
-shaders, same narrative — restructured into Next.js and given a real backend.
-Three.js is pinned to `0.128.0` so the visuals match the prototype exactly.
+`prototype/`). This app began as a faithful port of that build — same narrative,
+same scroll choreography — restructured into Next.js and given a real backend.
+The rendering has since moved on from the prototype's baked matcap to the HDR
+reflection pipeline described above; the prototype is kept as the original
+reference. Three.js remains pinned to `0.128.0`.
