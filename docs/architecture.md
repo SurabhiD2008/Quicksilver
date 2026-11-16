@@ -105,7 +105,12 @@ to 8-bit buffers.
 **Staging.** The studio is rotated by a uniform as the story advances, so the
 key light swings to the side away from the copy (sections alternate left and
 right), and it tilts as the drop flattens so the wordmark sits on dark mirror.
-On tall, narrow viewports the camera pulls back so the whole drop fits the width.
+The camera itself travels with the scroll: it orbits around the drop, rises a
+little and pushes in through the middle acts, then returns square-on for the
+plaque, with pointer parallax layered on top. Most beads hang behind the drop
+but every fifth is a small one in the foreground, so the layers slide against
+each other and read as depth. On tall, narrow viewports the camera pulls back so
+the whole drop fits the width.
 The canvas is given an explicit CSS size — a `<canvas>` is a replaced element and
 would otherwise be laid out at its backing-store size, i.e. 2× too large on a
 HiDPI display.

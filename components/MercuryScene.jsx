@@ -68,6 +68,7 @@ export default function MercuryScene() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     camera.position.set(0, 0, 5.6);
+    let camDist = 5.6;   // resting camera distance; widened on narrow screens
 
     const BG_WARM = sceneColor('#0d0a0e');
     const BG_COOL = sceneColor('#070a10');
@@ -382,11 +383,21 @@ void main(){
     const BEAD_COUNT = IS_TOUCH ? 16 : 34;
     for (let i = 0; i < BEAD_COUNT; i++) {
       const m = new THREE.Mesh(beadGeo, beadMaterial);
-      m.position.set((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 9, -2 - Math.random() * 6);
-      const s = 0.05 + Math.random() * 0.28;
+      // Most beads hang in the room behind the drop; every fifth one is a small
+      // bead in the foreground, between the drop and the lens. With the camera
+      // orbiting, the three layers slide against each other and read as depth.
+      const near = i % 5 === 4;
+      const spanX = near ? 5.5 : 12;
+      const spanY = near ? 2.6 : 5;
+      m.position.set(
+        (Math.random() - 0.5) * spanX,
+        (Math.random() - 0.5) * spanY * 1.8,
+        near ? 1.9 + Math.random() * 1.5 : -2 - Math.random() * 6,
+      );
+      const s = near ? 0.035 + Math.random() * 0.05 : 0.05 + Math.random() * 0.28;
       m.scale.setScalar(s);
       BEADS.push({
-        mesh: m, size: s,
+        mesh: m, size: s, spanX, spanY,
         driftX: (Math.random() - 0.5) * 0.12,
         driftY: 0.06 + Math.random() * 0.16,
         swayAmp: 0.2 + Math.random() * 0.5,
@@ -684,7 +695,7 @@ void main(){
         camera.aspect = w / h;
         // On tall, narrow screens pull the camera back so the whole drop fits
         // the width instead of being cropped by the sides.
-        camera.position.z = 5.6 * Math.max(1, 0.82 / camera.aspect);
+        camDist = 5.6 * Math.max(1, 0.82 / camera.aspect);
         camera.updateProjectionMatrix();
       }
     }
@@ -768,7 +779,7 @@ void main(){
         const p = bd.mesh.position;
         p.y += bd.driftY * dt * beadSpeed;
         p.x += (bd.driftX + Math.sin(t * 0.3 + bd.swayPhase) * bd.swayAmp * 0.06) * dt * beadSpeed;
-        if (p.y > 5) { p.y = -5; p.x = (Math.random() - 0.5) * 12; }
+        if (p.y > bd.spanY) { p.y = -bd.spanY; p.x = (Math.random() - 0.5) * bd.spanX; }
         bd.mesh.rotation.y += dt * bd.spin;
       }
 
@@ -793,11 +804,19 @@ void main(){
 
       const px = (pointerPx.x / window.innerWidth) * 2 - 1;
       const py = (pointerPx.y / window.innerHeight) * 2 - 1;
-      const par = REDUCED ? 0.05 : 0.22;
+      const par = REDUCED ? 0.05 : 0.36;
       camTarget.set(px * par, -py * par);
+      // The camera travels with the story: it orbits around the drop, rises a
+      // little and pushes in through the middle acts, and comes back square-on
+      // for the plaque and its wordmark. Pointer parallax rides on top.
+      const orbitAmt = REDUCED ? 0.25 : 1;
+      const yaw = Math.sin(f * Math.PI * 2) * 0.42 * orbitAmt;
+      const pitch = Math.sin(f * Math.PI) * 0.13 * orbitAmt * (1 - plaque);
+      const dist = camDist * (1 - 0.08 * Math.sin(f * Math.PI) * orbitAmt);
       const camK = 1 - Math.exp(-dt * 3.5);
-      camera.position.x = lerp(camera.position.x, camTarget.x, camK);
-      camera.position.y = lerp(camera.position.y, camTarget.y, camK);
+      camera.position.x = lerp(camera.position.x, Math.sin(yaw) * Math.cos(pitch) * dist + camTarget.x, camK);
+      camera.position.y = lerp(camera.position.y, Math.sin(pitch) * dist + camTarget.y, camK);
+      camera.position.z = lerp(camera.position.z, Math.cos(yaw) * Math.cos(pitch) * dist, camK);
       camera.lookAt(0, 0, 0);
 
       if (elTension) elTension.textContent = Math.round((1 - heat) * 100) + '%';
