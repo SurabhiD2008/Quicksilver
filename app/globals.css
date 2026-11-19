@@ -74,6 +74,10 @@ section::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  /* main (z 4) sits above the daylight veil (z 3), so without this the dark
+     scrim of the last fiction section would hang over the pale epilogue as a
+     dark box. MercuryScene fades it out as the veil comes in. */
+  opacity: var(--scrim-fade, 1);
   background: linear-gradient(
     90deg,
     rgba(6, 6, 11, 0.72) 0%,

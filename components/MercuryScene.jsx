@@ -665,6 +665,9 @@ void main(){
       const end = top - window.innerHeight * 0.30;
       const t = Math.min(Math.max((window.scrollY - start) / (end - start), 0), 1);
       epilogueVeil.style.opacity = t;
+      // The fiction sections' dark legibility scrims live in <main>, above the
+      // veil — fade them out early so they never show as a dark box on daylight.
+      document.documentElement.style.setProperty('--scrim-fade', String(Math.max(0, 1 - t / 0.3)));
       // Once the pale daylight veil dominates, flip the fixed corner labels
       // (HUD, zone, credit) to a dark, crisp treatment so they stay readable.
       document.body.classList.toggle('is-daylight', t > 0.55);
