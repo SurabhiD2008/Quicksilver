@@ -1,0 +1,42 @@
+[
+  {
+    "file": "lib/server/logger.ts",
+    "line": "if (level === 'error') console.error(line);",
+    "reason": "The logger is the one sanctioned writer to the console; everything else logs through it."
+  },
+  {
+    "file": "lib/server/logger.ts",
+    "line": "else if (level === 'warn') console.warn(line);",
+    "reason": "The logger is the one sanctioned writer to the console."
+  },
+  {
+    "file": "lib/server/logger.ts",
+    "line": "else console.log(line);",
+    "reason": "The logger is the one sanctioned writer to the console."
+  },
+  {
+    "file": "tests/helpers/api.ts",
+    "line": "export const STATS_TOKEN = 'test-token-0123456789abcdefghijklmnop';",
+    "reason": "A fixed test-only token used by the in-process API tests; it unlocks nothing outside the test suite."
+  },
+  {
+    "file": "e2e/guard.selftest.spec.ts",
+    "line": "await p.setContent(page('<script>console.error(\"planted\")</script>'));",
+    "reason": "The guard self-test plants a console error on purpose to prove the guard catches it."
+  },
+  {
+    "file": "eslint.config.mjs",
+    "line": "'no-debugger': 'error',",
+    "reason": "This line forbids debugger statements; it is the rule, not a use."
+  },
+  {
+    "file": "scripts/screenshots.ts",
+    "line": "const base = external ?? `http://127.0.0.1:${PORT}`;",
+    "reason": "The screenshot tool's own local server address, used only when no --url is given."
+  },
+  {
+    "file": "scripts/screenshots.ts",
+    "line": ": spawn('npx', ['next', 'start', '-p', String(PORT), '-H', '127.0.0.1'], {",
+    "reason": "Binds the screenshot tool's temporary server to the loopback interface only."
+  }
+]

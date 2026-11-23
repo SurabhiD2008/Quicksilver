@@ -1,0 +1,209 @@
+/* Epilogue: "This part is real". The page surfaces out of the dark chrome
+   stage into a centred, editorial daylight set in Fraunces. */
+
+/* The veil covers the fiction visuals (canvas, vignette, wordmark) but sits
+   below the copy. Its own scroll maths fades it in as the epilogue arrives. */
+#epilogue-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--daylight-top) 0%,
+    var(--daylight-mid) 55%,
+    var(--daylight-bottom) 100%
+  );
+  opacity: 0;
+}
+
+.epilogue {
+  position: relative;
+  justify-content: flex-start;
+  align-items: center;
+  text-align: center;
+  /* The deep top padding gives the veil room to finish before the first line
+     is in reading position, and reads as a beat of calm before the facts. */
+  padding-top: 35vh;
+  padding-bottom: 16vh;
+  min-height: auto;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.epilogue::before {
+  display: none;
+}
+/* Once the veil is fully opaque, the section also paints the same
+   viewport-fixed gradient: nothing changes on screen, but the copy now sits on
+   a real backdrop of its own, which is what assistive tooling inspects. */
+body.daylight-full .epilogue {
+  background: linear-gradient(
+      180deg,
+      var(--daylight-top) 0%,
+      var(--daylight-mid) 55%,
+      var(--daylight-bottom) 100%
+    )
+    fixed;
+}
+
+/* Without the reveal script (no JavaScript) the section carries its own
+   daylight so the copy is readable. */
+body:not(.reveal-ready) .epilogue {
+  background: var(--daylight-mid);
+  max-width: none;
+}
+
+.epilogue-tag {
+  color: var(--epilogue-accent);
+  text-shadow: none;
+}
+
+.epilogue-heading,
+.epilogue-body,
+.epilogue-subheading {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+.epilogue-heading {
+  font-weight: 600;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  max-width: 20ch;
+  margin: 0 auto 1.4rem;
+  background: linear-gradient(
+    100deg,
+    var(--heading-teal) 0%,
+    var(--epilogue-sub) 45%,
+    var(--epilogue-indigo) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+.epilogue-body {
+  max-width: 60ch;
+  margin: 0 auto 22px;
+  color: var(--epilogue-text);
+  font-size: var(--type-body);
+  line-height: 1.8;
+}
+.epilogue-close {
+  font-style: italic;
+  color: var(--epilogue-link);
+  font-size: 1.18rem;
+}
+.epilogue-subheading {
+  font-weight: 600;
+  color: var(--epilogue-sub);
+  max-width: 24ch;
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  line-height: 1.2;
+  margin: var(--space-8) auto 20px;
+  padding-top: 30px;
+  position: relative;
+}
+.epilogue-subheading::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 2px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--heading-teal), var(--epilogue-indigo));
+}
+
+.epilogue-sources {
+  margin: 52px auto 0;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--epilogue-rule);
+  max-width: 60ch;
+  text-align: left;
+}
+.epilogue-sources-title {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--epilogue-accent);
+  margin-bottom: 12px;
+  text-align: center;
+}
+.epilogue-sources ol {
+  padding-left: 20px;
+  margin: 0 0 16px;
+  color: var(--epilogue-quiet);
+  font-size: var(--type-link);
+  line-height: 1.7;
+}
+.epilogue-sources li {
+  margin-bottom: var(--space-2);
+}
+/* Each reference link is a full tap target on its own line. */
+.epilogue-sources a,
+.epilogue-learn-more a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  color: var(--epilogue-link);
+}
+.epilogue-learn-more {
+  font-size: var(--type-link);
+  color: var(--epilogue-quiet);
+  text-align: center;
+}
+.epilogue-sources a:focus-visible,
+.epilogue-learn-more a:focus-visible,
+.epilogue-reset-link:focus-visible {
+  outline: 2px solid var(--epilogue-link);
+  outline-offset: 2px;
+}
+
+.epilogue-reset-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  margin-top: var(--space-6);
+  font-family: var(--font-mono), monospace;
+  letter-spacing: 0.12em;
+  font-size: var(--type-small);
+  color: var(--epilogue-link);
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+
+/* With the reveal script running, the copy starts hidden and fades in with the
+   daylight; the script sets the live opacity. */
+body.reveal-ready .epilogue-tag,
+body.reveal-ready .epilogue-heading,
+body.reveal-ready .epilogue-body,
+body.reveal-ready .epilogue-subheading,
+body.reveal-ready .epilogue-sources,
+body.reveal-ready .epilogue-reset-link {
+  opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .epilogue {
+    padding-top: 24vh;
+  }
+}
+
+/* Fades run only once the reveal has painted its first state. The veil fades
+   with the copy, so dark text is never left on the dark stage mid-scroll. */
+body.reveal-animate #epilogue-veil,
+body.reveal-animate .epilogue-tag,
+body.reveal-animate .epilogue-sources,
+body.reveal-animate .epilogue-reset-link {
+  transition: opacity 0.5s ease;
+}
+body.reveal-animate .epilogue-heading,
+body.reveal-animate .epilogue-body,
+body.reveal-animate .epilogue-subheading {
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+}

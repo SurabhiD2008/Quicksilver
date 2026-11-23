@@ -1,100 +1,103 @@
 # Analytics
 
-A deliberately small, privacy-light record of **how far visitors travel through
-the narrative** — nothing more. There is no personal data, no cookies, no
-localStorage, no fingerprinting. It exists to answer one question: of everyone
-who arrives, how many make it to the epilogue?
-
----
+A small record of how far visitors travel through the narrative, and nothing more. There is no personal data, no cookies, no local storage and no fingerprinting. It answers one question: of everyone who arrives, how many reach the epilogue?
 
 ## Data model
 
-One table, one row per page load.
+Two tables, created by the versioned migrations in `db/migrations/` (run with `npm run db:migrate`).
 
-```sql
-CREATE TABLE IF NOT EXISTS visits (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- 0 Solid State · 1 Molten · 2 Fracture · 3 Reformation · 4 Epilogue
-  max_zone    SMALLINT NOT NULL DEFAULT 0
-);
+| Table                | Purpose                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `visits`             | One row per page load: `id` (UUID), `created_at`, `max_zone` (0 to 4, enforced by a check constraint) |
+| `daily_visit_counts` | One row per UTC day: how many visits were recorded, used to enforce the daily cap                     |
+| `schema_migrations`  | Which migration files have been applied                                                               |
 
-CREATE INDEX IF NOT EXISTS visits_created_at_idx ON visits (created_at);
-```
+`max_zone` is the furthest zone reached: 0 Solid State, 1 Molten, 2 Fracture, 3 Reformation, 4 Epilogue. It only moves forward: the update uses `GREATEST`, so a repeated, late or concurrent report can never lower it.
 
-`max_zone` is the furthest narrative zone the visitor reached. It only ever
-moves forward (the update uses `GREATEST`), so re-reporting the same or an
-earlier zone is a no-op.
-
-The table is created automatically the first time any route runs (see
-`lib/db.js` → `ensureSchema`), so a brand-new database needs no migration.
-`db/schema.sql` is the canonical copy for manual provisioning.
-
----
-
-## The lifecycle of a visit
+## Lifecycle of a visit
 
 ```
-page load ──▶ POST /api/visit ──▶ INSERT row ──▶ { visitId }
-                                                     │  (kept in memory only)
-scroll ──▶ compute furthest zone ──▶ POST /api/scroll { visitId, zone }
-                                          └▶ UPDATE max_zone = GREATEST(max_zone, zone)
+page load -> POST /api/visit  -> claim a daily slot and insert a row -> { visitId }
+scroll    -> furthest zone    -> POST /api/scroll { visitId, zone } -> max_zone = GREATEST(max_zone, zone)
 ```
 
-The client (`components/Analytics.jsx`) holds the `visitId` in memory for the
-session — never in storage. As the reader scrolls, it works out the furthest
-section past the middle of the viewport and reports it, but only when that number
-increases.
+The client (`lib/client/analytics.ts`) keeps the `visitId` in memory for the session and reports the zone only when it increases. The zone rule (`lib/shared/zones.ts`) is the same one the on-screen zone label uses.
 
----
+When the deployment has no database, the page is built with analytics disabled and makes no requests at all.
 
 ## Endpoints
 
-### `POST /api/visit`
-Records a new page load.
+All responses are JSON and sent with `Cache-Control: no-store`. Errors use one shape:
 
 ```json
-// → 200
-{ "visitId": "3f2a…-uuid" }
-```
-
-### `POST /api/scroll`
-Advances the furthest zone reached for a visit. `zone` is clamped to `0..4`.
-
-```json
-// body
-{ "visitId": "3f2a…-uuid", "zone": 4 }
-// → 200
-{ "ok": true, "zone": 4 }
-```
-
-Returns `400` if `visitId`/`zone` are missing or malformed, `404` for an unknown
-`visitId`.
-
-### `GET /api/stats`
-Aggregate funnel across all visits.
-
-```json
-// → 200
 {
-  "total": 1284,
-  "reachedMolten": 902,
-  "reachedFracture": 640,
-  "reachedReformation": 511,
-  "reachedEpilogue": 388
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "The request body does not match the expected shape."
+  }
 }
 ```
 
-Each `reached*` is the count of visits whose `max_zone` is at least that zone —
-a monotonically decreasing funnel. Served with `Cache-Control: no-store`.
+### `POST /api/visit`
 
----
+Body: empty, or `{}`. Any other field is refused.
 
-## Notes
+| Status | When                                                                      |
+| ------ | ------------------------------------------------------------------------- |
+| 201    | `{ "visitId": "<uuid>" }`                                                 |
+| 400    | Unknown fields, or malformed JSON                                         |
+| 413    | Body over the size cap                                                    |
+| 415    | A body that is not `application/json`                                     |
+| 429    | `RATE_LIMITED` (per address) or `DAILY_CAP_REACHED` (global, per UTC day) |
+| 503    | `ANALYTICS_DISABLED` (no database configured) or `DATABASE_UNAVAILABLE`   |
 
-- All queries are parameterized through `@vercel/postgres`' tagged-template `sql`,
-  so user-supplied values (the `visitId`, the `zone`) are never string-concatenated.
-- The routes are best-effort by contract: any failure returns a 5xx and the
-  frontend ignores it. Analytics must never degrade the experience.
-- `/api/stats` is intentionally **not** shown anywhere on the page. It's there for
-  you to consume (a dashboard, a `curl`, a scheduled job) if you want it.
+### `POST /api/scroll`
+
+Body: `{ "visitId": "<uuid>", "zone": <integer 0..4> }`. Nothing else is accepted: numeric strings, fractions, out-of-range zones and extra fields are refused with 400.
+
+| Status             | When                                             |
+| ------------------ | ------------------------------------------------ |
+| 200                | `{ "ok": true, "zone": <stored furthest zone> }` |
+| 400                | Invalid body                                     |
+| 404                | `VISIT_NOT_FOUND`                                |
+| 413, 415, 429, 503 | As above                                         |
+
+### `GET /api/stats`
+
+Requires `Authorization: Bearer <STATS_TOKEN>`. Without the token configured, every request is refused. After repeated failures from one address, that address is locked out for a while, even with the right token.
+
+| Status | When                                                     |
+| ------ | -------------------------------------------------------- |
+| 200    | The funnel                                               |
+| 401    | Missing or wrong token (with `WWW-Authenticate: Bearer`) |
+| 429    | Too many failed attempts from this address               |
+| 503    | No database, or the database is unavailable              |
+
+Each `reached*` value counts visits whose `max_zone` is at least that zone, so the numbers can only narrow. The server checks this before answering.
+
+Worked example. For seven visits whose furthest zones are the ones below, the endpoint returns this body. The test suite seeds exactly these visits and compares the response with this block, so the example cannot drift from the code.
+
+<!-- stats-example-seed: [0, 0, 1, 2, 3, 4, 4] -->
+<!-- stats-example -->
+
+```json
+{
+  "total": 7,
+  "reachedMolten": 5,
+  "reachedFracture": 4,
+  "reachedReformation": 3,
+  "reachedEpilogue": 2
+}
+```
+
+### `GET /api/health`
+
+`{ "status": "ok" }`. Nothing else.
+
+## Limits
+
+The numbers live in `lib/shared/limits.ts`; the docs check compares the README against that file.
+
+- Rate limits are per address and per server instance, kept in memory, so they reset when an instance restarts.
+- The daily visit cap is global and enforced in the database: claiming the day's slot and inserting the visit happen in one statement.
+- Every value reaches Postgres as a query parameter.

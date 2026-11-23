@@ -1,0 +1,81 @@
+/* Design tokens: the only place colours, type sizes, spacing and radii are
+   defined. Contrast pairs are checked by tests/unit/contrast.test.ts. */
+:root {
+  /* Night stage */
+  --ink: #08080b;
+  --paper: #eef0f5;
+  --text-lead: #c9cdd8;
+  --text-muted: #b9bfcc;
+  --pink: #ffc7de;
+  --cyan: #bff3ff;
+  --violet: #d9c7ff;
+  --gold: #ffe9b8;
+  --white: #ffffff;
+  --edge: rgba(255, 255, 255, 0.14);
+  --track: rgba(255, 255, 255, 0.12);
+  --scene-bg-warm: #0d0a0e;
+  --scene-bg-cool: #070a10;
+
+  /* Legibility layers over the scene. Text never sits on less than
+     --scrim-text-alpha of backdrop, or on less than the bar's alpha. */
+  --scrim-rgb: 6, 6, 11;
+  --scrim-text-alpha: 0.74;
+  --bar-rgb: 8, 8, 11;
+  --bar-alpha: 0.76;
+  --bar-alpha-solid: 0.94;
+  --halo-rgb: 4, 6, 12;
+  --text-halo: 0 1px 3px rgba(0, 0, 0, 0.85), 0 2px 22px rgba(0, 0, 0, 0.6);
+  --label-halo: 0 1px 3px rgba(0, 0, 0, 0.85), 0 2px 16px rgba(0, 0, 0, 0.6);
+
+  /* Daylight epilogue */
+  --daylight-top: #f1f5f4;
+  --daylight-mid: #e7eef1;
+  --daylight-bottom: #dde7ee;
+  --daylight-bar-rgb: 236, 242, 243;
+  --daylight-bar-alpha: 0.66;
+  --daylight-edge: rgba(20, 45, 45, 0.14);
+  --daylight-label: #2f4540;
+  --daylight-value: #14323a;
+  --epilogue-text: #2b3a3a;
+  --epilogue-quiet: #3f5450;
+  --epilogue-accent: #0a5d50;
+  --epilogue-link: #0b5e57;
+  --epilogue-sub: #155e75;
+  --epilogue-indigo: #3730a3;
+  --epilogue-rule: rgba(21, 94, 117, 0.18);
+  --heading-teal: #0f766e;
+
+  /* Fallback drop when WebGL is unavailable */
+  --fallback-hi: #f4f6fb;
+  --fallback-mid: #9aa3b5;
+  --fallback-low: #3a404d;
+  --fallback-deep: #0b0c10;
+
+  /* Type scale */
+  --type-micro: 0.66rem;
+  --type-label: 0.72rem;
+  --type-small: 0.8rem;
+  --type-link: 0.85rem;
+  --type-body: 1.12rem;
+  --type-value: 1.05rem;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 3.5rem;
+  --gutter: clamp(1rem, 3vw, 2.4rem);
+
+  /* Radii and sizes */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-round: 50%;
+  --tap-min: 44px;
+  --bar-h: 3.75rem;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}

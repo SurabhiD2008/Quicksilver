@@ -1,21 +1,34 @@
 # dependencies
 /node_modules
 
-# next.js
+# next.js build output
 /.next
 /out
-
-# production
 /build
+next-env.d.ts
+*.tsbuildinfo
 
-# env — real env files only; .env.example is committed on purpose
+# environment files (only .env.example is committed)
 .env
 .env*.local
 
 # vercel
 .vercel
 
-# submission / marketing material — kept locally, deliberately not published
+# tests, coverage and verification logs
+/coverage
+/test-results
+/playwright-report
+/blob-report
+
+# local databases
+*.db
+*.sqlite
+
+# private planning documents
+/.planning/
+
+# submission and marketing drafts never enter the repository
 /submission
 /screenshots
 /QUICKSILVER.md

@@ -1,19 +1,57 @@
 {
   "name": "quicksilver",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Quicksilver — an interactive liquid-metal experience (Next.js port) with a Postgres-backed visitor/scroll analytics API.",
+  "type": "module",
+  "description": "An interactive liquid-metal experience on Next.js, with a small Postgres-backed scroll-depth analytics API.",
+  "license": "MIT",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "e2e": "playwright test",
+    "verify": "node scripts/verify.ts",
+    "verify:final": "node scripts/verify.ts --final",
+    "smoke": "node scripts/smoke.ts",
+    "screenshots": "node scripts/screenshots.ts",
+    "db:migrate": "node scripts/migrate.ts",
+    "mutation": "node scripts/mutation-proof.ts"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.10.0",
-    "next": "^14.2.35",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "0.128.0"
+    "@neondatabase/serverless": "1.2.0",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.128.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@electric-sql/pglite": "0.5.15",
+    "@playwright/test": "1.65.0",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.128.0",
+    "@vitest/coverage-v8": "5.1.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.6",
+    "fast-check": "4.10.2",
+    "knip": "6.40.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  },
+  "overrides": {
+    "playwright-core": "1.65.0"
   }
 }

@@ -1,0 +1,141 @@
+/* Frosted header and footer bars. The scrolling copy slides underneath and is
+   blurred out, so it never runs into the fixed labels centred inside them.
+   The fill alone is opaque enough for label contrast; the blur is a bonus. */
+.chrome-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(var(--bar-rgb), var(--bar-alpha));
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease;
+}
+#bar-top {
+  top: 0;
+  height: calc(var(--bar-h) + var(--safe-top));
+  border-bottom: 1px solid var(--edge);
+}
+#bar-bottom {
+  bottom: 0;
+  height: calc(var(--bar-h) + var(--safe-bottom));
+  border-top: 1px solid var(--edge);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .chrome-bar {
+    background: rgba(var(--bar-rgb), var(--bar-alpha-solid));
+  }
+}
+
+#hud,
+#zone,
+#credit {
+  position: fixed;
+  z-index: 5;
+  height: var(--bar-h);
+  display: flex;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--type-label);
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+  text-shadow: var(--label-halo);
+  transition:
+    color 0.35s ease,
+    text-shadow 0.35s ease;
+}
+
+#hud {
+  left: var(--gutter);
+  bottom: var(--safe-bottom);
+  flex-direction: column;
+  justify-content: center;
+  letter-spacing: 0.14em;
+}
+#hud .row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+#hud .val {
+  color: var(--paper);
+  font-size: var(--type-value);
+  letter-spacing: 0.04em;
+}
+#hud .bar {
+  margin-top: 0.55rem;
+  width: 150px;
+  height: 3px;
+  background: var(--track);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+#hud .bar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+  transform-origin: left;
+  transform: scaleX(1);
+}
+
+#zone {
+  right: var(--gutter);
+  top: var(--safe-top);
+  align-items: center;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+#credit {
+  left: 50%;
+  bottom: var(--safe-bottom);
+  align-items: center;
+  transform: translateX(-50%);
+  font-size: var(--type-micro);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* With the daylight veil up, the bars turn to pale glass and the labels to
+   dark slate so they stay readable. */
+body.is-daylight .chrome-bar {
+  background: rgba(var(--daylight-bar-rgb), var(--daylight-bar-alpha));
+  border-color: var(--daylight-edge);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.is-daylight .chrome-bar {
+    background: rgba(var(--daylight-bar-rgb), var(--bar-alpha-solid));
+  }
+}
+body.is-daylight #hud,
+body.is-daylight #zone,
+body.is-daylight #credit {
+  color: var(--daylight-label);
+  text-shadow: none;
+}
+body.is-daylight #hud .val {
+  color: var(--daylight-value);
+}
+body.is-daylight #hud .bar {
+  background: var(--daylight-edge);
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  #hud .bar {
+    width: 110px;
+  }
+}
+
+/* On narrow phones the bottom-left HUD and the bottom-centre credit cannot
+   share a row: lift the HUD into the top bar beside the zone label. */
+@media (max-width: 600px) {
+  #hud {
+    top: var(--safe-top);
+    bottom: auto;
+  }
+}

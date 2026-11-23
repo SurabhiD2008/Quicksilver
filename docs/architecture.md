@@ -1,164 +1,70 @@
 # Architecture
 
-How the whole of Quicksilver fits together — the Next.js frontend, the Three.js
-scene that does the heavy lifting, the serverless analytics API, the Postgres
-database, and the decisions that tie them.
+How Quicksilver fits together: the prerendered page, the Three.js scene, the serverless analytics API and the database.
 
----
+## At a glance
 
-## The system at a glance
+Everything is served from one origin on Vercel: the prerendered page at `/` from the CDN and the API at `/api/*` as Node serverless functions. The client calls the API with relative URLs, so there is no CORS.
 
-```
-                    Browser
-        ┌───────────────────────────────┐
-        │  Next.js page (App Router)     │   ← prerendered HTML on Vercel's CDN
-        │  • 5 scroll sections (RSC)      │
-        │  • MercuryScene  ('use client') │   ← Three.js: HDR reflections + post
-        │  • Analytics     ('use client') │   ← fire-and-forget beacons
-        └───────────────┬───────────────┘
-                        │ fetch /api/*  (same origin)
-                        ▼
-        ┌───────────────────────────────┐
-        │  Vercel serverless functions   │   ← app/api/*/route.js (Node runtime)
-        │  • /api/visit   record a load   │
-        │  • /api/scroll  advance zone    │
-        │  • /api/stats   aggregate funnel│
-        └───────────────┬───────────────┘
-                        │ @vercel/postgres (pooled)
-                        ▼
-        ┌───────────────────────────────┐
-        │  Neon — serverless PostgreSQL  │
-        │  • one table: visits           │
-        └───────────────────────────────┘
-```
+The experience never depends on the backend. Without a database the page is built with analytics disabled and makes no API calls. Without WebGL the page shows a static drop and keeps every word readable.
 
-Everything is served from **one origin** on Vercel: the prerendered page at `/`
-and the API at `/api/*`. Because they share an origin there is no CORS and the
-client calls `/api` relatively.
+## The page
 
-**Design principle — the experience never blocks on the backend.** The analytics
-calls are best-effort. If the database is missing or unreachable, the API routes
-return a 500, the client swallows it, and the visual experience is completely
-unaffected. Analytics is additive, never load-bearing.
+`app/page.tsx` is a server component: the four fiction acts (`components/FictionSections.tsx`) and the epilogue (`components/Epilogue.tsx`, `components/Sources.tsx`) are static markup in the first HTML response, which is what social cards and search engines read. Two client components sit on top:
 
----
+- `components/MercuryScene.tsx` renders the fixed layer (canvas holder, fallback drop, vignette, daylight veil, wordmark, frosted bars, surface-tension readout, zone label, credit, cursor) and mounts the scene. It sits inside `components/SceneBoundary.tsx`, an error boundary that switches to the static fallback rather than letting a scene failure unmount the copy.
+- `components/Analytics.tsx` records the visit and the furthest zone reached. It renders nothing.
 
-## The frontend
+Styles live in `app/styles/`: `tokens.css` defines every colour, type size, spacing step and radius; the other files (`base.css`, `sections.css`, `chrome.css`, `epilogue.css`) only use tokens. `tests/unit/contrast.test.ts` checks the text colours against their backdrops under the worst case: pure white metal behind a scrim or bar, and the daylight veil at the opacity at which the labels switch colour.
 
-### Server vs. client components
+## The scene (`lib/scene/`)
 
-The page (`app/page.js`) is a **React Server Component**: the five sections and
-the verbatim epilogue copy are plain markup, rendered to static HTML at build
-time. Only two pieces opt into the client:
+| Module                     | Role                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `stage.ts`                 | Mounts the scene into its holder and wires pointer, scroll, resize, reduced-motion changes and WebGL context loss              |
+| `world.ts`                 | Acquires the WebGL context (or reports there is none), builds renderer, camera, meshes, materials, cube capture and post chain |
+| `frame.ts`                 | The render loop: per-frame updates of the drop, the room, the camera and the readout                                           |
+| `story.ts`                 | Pure functions of the scroll fraction: heat, fracture, plaque, wordmark reveal, camera path, studio rotation                   |
+| `materials.ts`, `props.ts` | Shader materials; droplets and floating beads                                                                                  |
+| `post.ts`                  | HDR post chain and the cube capture for live reflections                                                                       |
+| `ripples.ts`               | Touch ripples via an analytic ray/sphere hit                                                                                   |
+| `tone.ts`                  | Inverse tone curve so CSS colours land exactly on screen                                                                       |
+| `glsl/*`                   | The shaders, unchanged from the original build                                                                                 |
 
-- **`MercuryScene`** (`'use client'`) owns everything visual and interactive —
-  the WebGL canvas, the fixed header/footer bars, HUD/wordmark/credit/cursor, and the entire
-  Three.js render loop. It reads the shared scroll state and writes to DOM nodes
-  (HUD %, zone label, wordmark opacity, the epilogue veil) each frame.
-- **`Analytics`** (`'use client'`) is a pure side-effect recorder — it renders
-  nothing, just POSTs to the API as the reader scrolls.
+The drop is an `IcosahedronGeometry(1, 48)` with a custom `ShaderMaterial`:
 
-Keeping the copy in RSC means the text is in the initial HTML (good for SEO and
-the social cards defined in `app/layout.js`), while the ~200 KB of Three.js only
-loads for the interactive layer.
+- Vertex shader: displaces each vertex along its normal with low-frequency fbm noise (broad, glassy swells), one extra smooth octave that grows with heat, and up to three decaying sine-wave ripples from touches. It rebuilds the normal from two tangential neighbours so reflections bend with the surface.
+- Fragment shader: a true mirror. The view vector is reflected about the world-space normal and looked up in a procedural HDR studio, a GLSL function that returns radiance for any direction. Because the lights are many times brighter than white, highlights bloom. Schlick Fresnel, a warm tint that follows heat and a faint thin-film sheen finish it.
 
-### The Three.js scene
+Inter-reflections: a `CubeCamera` at the centre of the drop captures only the droplets and beads, on transparent black, each frame (every other frame on touch devices); the drop composites that over the studio. Droplets and beads intersect their reflection ray with the drop's bounding sphere analytically: one bounce, no extra render.
 
-The blob is an `IcosahedronGeometry(1, 48)` shaded with a custom `ShaderMaterial`:
+Post chain: the scene renders into a multisampled half-float target; a soft-knee bright pass and a downsample/upsample pyramid make the bloom; the final pass adds bloom, slight colour fringing, ACES tone-mapping, gamma and fine animated grain. Without float render targets the chain falls back to 8-bit buffers.
 
-- **Vertex shader** — displaces each vertex along its normal using low-frequency
-  fbm noise (three octaves with a steep falloff, so the surface has broad glassy
-  swells rather than fine crumple), one extra smooth octave that grows with heat,
-  plus up to three decaying sine-wave ripples sourced from pointer touches. It
-  recomputes the normal from two tangential neighbours so reflections actually
-  bend with the surface, and passes world-space position and normal on.
-- **Fragment shader** — a true mirror. The view vector is reflected about the
-  world-space normal and looked up in a **procedural HDR studio**: a GLSL
-  function that returns radiance for any direction (grey ceiling → crisp horizon
-  seam → dark floor, a key softbox, strip and rim lights, coloured gels and a
-  few tiny, very hot practicals for glints). Because it is evaluated
-  analytically per pixel it is infinitely sharp, and because the lights are many
-  times brighter than white the highlights bloom. Schlick Fresnel, a warm tint
-  that follows heat, and a faint thin-film sheen at grazing angles finish it.
+The scroll fraction is anchored to the bottom of Reformation, not the whole document, so the epilogue below does not stretch the timeline. The zone label uses the same rule as the analytics beacon (`lib/shared/zones.ts`).
 
-**Inter-reflections.** A `CubeCamera` at the centre of the drop captures only the
-droplets and beads, on transparent black, into a small mip-mapped cube target
-each frame; the drop composites that over the analytic studio. Going the other
-way, droplets and beads intersect their reflection ray with the drop's bounding
-sphere analytically and shade that hit with the same studio function — one
-bounce, no extra render.
-
-**HDR post chain.** Nothing is tone-mapped in the materials. The scene renders
-into a multisampled half-float target, then:
-
-1. a soft-knee bright pass and a 4–5 level downsample / tent-upsample pyramid
-   produce the bloom;
-2. the final pass adds the bloom, applies a trace of radial colour fringing,
-   ACES tone-mapping and gamma, and a fine animated grain that also dithers the
-   dark gradients against banding.
-
-Colours authored for the screen (the CSS-hex backgrounds, the backlight halo) are
-pushed through the inverse of that tone curve first, so they land on exactly the
-intended colour. Where float render targets are unavailable the chain falls back
-to 8-bit buffers.
-
-**Staging.** The studio is rotated by a uniform as the story advances, so the
-key light swings to the side away from the copy (sections alternate left and
-right), and it tilts as the drop flattens so the wordmark sits on dark mirror.
-The camera itself travels with the scroll: it orbits around the drop, rises a
-little and pushes in through the middle acts, then returns square-on for the
-plaque, with pointer parallax layered on top. Most beads hang behind the drop
-but every fifth is a small one in the foreground, so the layers slide against
-each other and read as depth. On tall, narrow viewports the camera pulls back so
-the whole drop fits the width.
-The canvas is given an explicit CSS size — a `<canvas>` is a replaced element and
-would otherwise be laid out at its backing-store size, i.e. 2× too large on a
-HiDPI display.
-
-A single **scroll fraction** — anchored to the *bottom of Reformation*, not the
-whole document, so the epilogue below doesn't stretch the timeline — drives the
-narrative via smoothstep easing: heat, fracture, plaque-flatten, and wordmark
-reveal are all functions of it.
-
-### Ripples without frame hitches
-
-Touch ripples need the point on the blob under the cursor. Rather than raycast
-the ~46k-triangle mesh on every pointer move (which stutters the frame), the
-scene does an **analytic ray↔sphere** intersection against the blob's bounding
-sphere — O(1), smooth. Cursor and camera-parallax smoothing are frame-rate
-independent (exponential), so motion stays smooth on any refresh rate.
-
-### Header and footer bars
-
-The HUD, zone label and byline are `position: fixed`, so long copy (the
-epilogue especially) used to scroll straight through them. Two fixed, frosted
-bars (`.chrome-bar` — a translucent fill plus `backdrop-filter: blur`) now sit at
-the top and bottom edges, on the same layer as the labels and ahead of them in
-the DOM so the labels paint on top. The labels are vertically centred inside the
-bars via a shared `--bar-h` custom property, with safe-area insets added for
-notched phones. `body.is-daylight` — the class the scene already toggles when the
-epilogue veil takes over — switches the bars from dark to pale glass. Browsers
-without `backdrop-filter` get a near-opaque fill instead.
-
----
+Resizing happens on demand (window resize and a `ResizeObserver`), not every frame. A lost WebGL context stops the loop and shows the fallback; when the browser restores the context, the component remounts the scene with a fresh canvas.
 
 ## The backend
 
-Three serverless routes under `app/api`, all on the Node.js runtime and marked
-`dynamic = 'force-dynamic'` (they touch the database, so they're never cached or
-prerendered). They share a thin Postgres client in `lib/db.js` that lazily runs
-`CREATE TABLE IF NOT EXISTS` once per instance, so the schema self-heals on first
-use — no migration step required for a fresh database.
+| Module                      | Role                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `app/api/*/route.ts`        | Thin route files: export the handlers, refuse other methods with 405, and opt out of caching            |
+| `lib/server/handlers.ts`    | The three analytics endpoints: rate limit, body validation, authorization, database call, error mapping |
+| `lib/server/http.ts`        | Body reading under the size cap, content-type check, the JSON response and error helpers                |
+| `lib/server/visits-repo.ts` | All SQL, parameterised                                                                                  |
+| `lib/server/rate-limit.ts`  | Sliding-window limiter with an injectable clock                                                         |
+| `lib/server/config.ts`      | The validated configuration; `instrumentation.ts` loads it at server start                              |
+| `lib/server/migrate.ts`     | Applies `db/migrations/*.sql` once each                                                                 |
+| `lib/server/runtime.ts`     | Production wiring: real config, Neon driver, wall clock, limiters                                       |
 
-See **[Analytics](analytics.md)** for the data model and request/response shapes.
+The handlers take their dependencies (configuration, database, clock, logger, limiters) as arguments, so the tests run the same code with an in-process Postgres and a controllable clock.
 
----
+Concurrency: the scroll update uses `GREATEST`, so concurrent or repeated reports converge on the highest zone. The visit insert claims the day's slot in `daily_visit_counts` and inserts the visit in one statement, so the daily cap holds when requests race.
+
+Security headers (content security policy, `nosniff`, frame denial, referrer policy, permissions policy) are set for every response in `next.config.ts`.
+
+See [analytics.md](analytics.md) for the data model and the request and response shapes.
 
 ## Provenance
 
-Quicksilver began life as a single self-contained HTML file (kept in
-`prototype/`). This app began as a faithful port of that build — same narrative,
-same scroll choreography — restructured into Next.js and given a real backend.
-The rendering has since moved on from the prototype's baked matcap to the HDR
-reflection pipeline described above; the prototype is kept as the original
-reference. Three.js remains pinned to `0.128.0`.
+Quicksilver began as a single self-contained HTML file. The Next.js app was a faithful port of it, then moved from a baked matcap to the HDR reflection pipeline above. The original file lives in the git history; it is no longer shipped, so the scene has one implementation.
